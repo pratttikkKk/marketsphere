@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: marketsphere-mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: marketsphere
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - marketsphere-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: marketsphere-backend
+    restart: always
+    ports:
+      - "5002:5002"
+    environment:
+      PORT: 5002
+      NODE_ENV: development
+      MONGO_URI: mongodb://mongodb:27017/marketsphere
+      JWT_SECRET: marketsphere_jwt_secure_development_secret_key_2026
+      CLIENT_URL: http://localhost:5173
+      PAYMENT_PROVIDER: SANDBOX
+      RAZORPAY_KEY_ID: rzp_test_sandbox_marketsphere
+      RAZORPAY_KEY_SECRET: marketsphere_payment_secret_2026
+      RAZORPAY_WEBHOOK_SECRET: marketsphere_webhook_secret_2026
+    depends_on:
+      - mongodb
+    networks:
+      - marketsphere-net
+
+volumes:
+  mongodb_data:
+    driver: local
+
+networks:
+  marketsphere-net:
+    driver: bridge
