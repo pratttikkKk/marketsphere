@@ -1,7 +1,25 @@
 import axios from 'axios';
 
+// Smart base URL resolution:
+// If running on a deployed web domain (e.g. Vercel), safely default to the live Render backend
+// If running locally, default to http://localhost:5002/api/v1
+const resolveBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  const isBrowser = typeof window !== 'undefined';
+  const isLocalhost = isBrowser && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+  if (isBrowser && !isLocalhost) {
+    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+      return envUrl;
+    }
+    return 'https://marketsphere-api.onrender.com/api/v1';
+  }
+
+  return envUrl || 'http://localhost:5002/api/v1';
+};
+
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5002/api/v1',
+  baseURL: resolveBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },

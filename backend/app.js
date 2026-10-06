@@ -16,22 +16,31 @@ app.use(helmet({
   contentSecurityPolicy: false // Allows loading assets in development
 }));
 
-// Environment-Driven Strict CORS
+// Environment-Driven CORS with Production Cloud Support
 const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:5174',
   'http://127.0.0.1:5174',
-  ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : [])
+  ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL.trim()] : [])
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (e.g. mobile apps, curl) in development
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow non-browser requests (e.g. mobile apps, curl, webhooks)
+    if (!origin) {
       return callback(null, true);
     }
-    return callback(new Error(`CORS policy does not allow access from origin ${origin}`));
+    const cleanOrigin = origin.replace(/\/$/, '');
+    const isExplicitlyAllowed = allowedOrigins.some(o => o.replace(/\/$/, '') === cleanOrigin);
+    const isVercel = cleanOrigin.endsWith('.vercel.app');
+    const isRender = cleanOrigin.endsWith('.onrender.com');
+
+    if (isExplicitlyAllowed || isVercel || isRender) {
+      return callback(null, true);
+    }
+    console.warn(`[CORS] Rejected request from unauthorized origin: ${origin}`);
+    return callback(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
