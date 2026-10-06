@@ -14,6 +14,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=5002
 
+# Pre-create uploads directory and set node user ownership on /app
+RUN mkdir -p /app/uploads && chown -R node:node /app
+
 # Non-root user for security
 USER node
 
