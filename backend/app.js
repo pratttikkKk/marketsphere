@@ -84,9 +84,14 @@ app.use('/api/v1/auth/register', authLimiter);
 app.use('/api/v1/orders/checkout', checkoutLimiter);
 app.use('/api/', generalLimiter);
 
-// Health & Readiness Probes
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'UP', timestamp: new Date() });
+// Root & Health Probes (Supports Render health check & browser verification)
+app.get(['/', '/health'], (req, res) => {
+  res.status(200).json({ 
+    status: 'UP', 
+    service: 'MarketSphere Marketplace Backend API',
+    database: mongoose.connection.readyState === 1 ? 'CONNECTED' : 'DISCONNECTED',
+    timestamp: new Date() 
+  });
 });
 
 app.get('/api/v1/health', (req, res) => {
