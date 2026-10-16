@@ -43,14 +43,25 @@ async function autoBootstrapDatabase() {
         email: adminEmail,
         passwordHash,
         role: 'ADMIN',
-        isActive: true
+        isActive: true,
+        isEmailVerified: true
       });
       console.log(`[BOOTSTRAP] Successfully created default ADMIN user: ${adminEmail} (password: ${adminPassword})`);
-    } else if (admin.role !== 'ADMIN') {
-      admin.role = 'ADMIN';
-      admin.isActive = true;
-      await admin.save();
-      console.log(`[BOOTSTRAP] Promoted existing account to ADMIN: ${adminEmail}`);
+    } else {
+      let needsSave = false;
+      if (admin.role !== 'ADMIN') {
+        admin.role = 'ADMIN';
+        admin.isActive = true;
+        needsSave = true;
+      }
+      if (!admin.isEmailVerified) {
+        admin.isEmailVerified = true;
+        needsSave = true;
+      }
+      if (needsSave) {
+        await admin.save();
+        console.log(`[BOOTSTRAP] Verified & ensured ADMIN account: ${adminEmail}`);
+      }
     }
 
     // 2. Ensure initial categories exist if database is fresh
@@ -77,9 +88,13 @@ async function autoBootstrapDatabase() {
         email: 'customer@marketsphere.com',
         passwordHash: custHash,
         role: 'CUSTOMER',
-        isActive: true
+        isActive: true,
+        isEmailVerified: true
       });
       console.log('[BOOTSTRAP] Created demo customer: customer@marketsphere.com / password123');
+    } else if (!customer.isEmailVerified) {
+      customer.isEmailVerified = true;
+      await customer.save();
     }
 
     // 4. Ensure demo Seller exists
@@ -92,8 +107,12 @@ async function autoBootstrapDatabase() {
         email: 'seller@marketsphere.com',
         passwordHash: sellerHash,
         role: 'SELLER',
-        isActive: true
+        isActive: true,
+        isEmailVerified: true
       });
+    } else if (!sellerUser.isEmailVerified) {
+      sellerUser.isEmailVerified = true;
+      await sellerUser.save();
     }
 
     let sellerProfile = await Seller.findOne({ userId: sellerUser._id });

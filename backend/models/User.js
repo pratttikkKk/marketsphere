@@ -20,6 +20,9 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['CUSTOMER', 'SELLER', 'ADMIN'], default: 'CUSTOMER' },
   addresses: [addressSchema],
   isActive: { type: Boolean, default: true },
+  isEmailVerified: { type: Boolean, default: false },
+  emailOtp: { type: String, default: null },
+  emailOtpExpires: { type: Date, default: null }
 }, { timestamps: true });
 
 userSchema.index({ role: 1 });

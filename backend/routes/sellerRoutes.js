@@ -23,6 +23,7 @@ router.patch('/orders/:orderId/status', requireAuth, requireApprovedSeller, sell
 router.put('/orders/:orderId/status', requireAuth, requireApprovedSeller, sellerController.updateOrderLevelStatus);
 router.patch('/orders/:orderId/verify-payment', requireAuth, requireApprovedSeller, sellerController.verifyOrderPayment);
 router.patch('/orders/:orderId/mark-paid', requireAuth, requireApprovedSeller, sellerController.markOrderAsPaid);
+router.patch('/orders/:orderId/refund', requireAuth, requireApprovedSeller, sellerController.processOrderRefund);
 
 // Admin moderation of sellers
 router.patch('/:id/status', requireAuth, requireRole('ADMIN'), sellerController.moderateSeller);

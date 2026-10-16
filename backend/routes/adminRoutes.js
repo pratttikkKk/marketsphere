@@ -12,6 +12,7 @@ router.get('/seller-applications', adminController.listSellerApplications);
 router.get('/moderation', adminController.getModerationQueue);
 router.get('/orders', adminController.getOrders);
 router.patch('/orders/:orderId/returns', adminController.handleReturn);
+router.patch('/orders/:orderId/refund', adminController.processOrderRefund);
 router.patch('/orders/:orderId/tracking', adminController.updateTracking);
 router.get('/categories', adminController.listCategories);
 router.post('/categories', adminController.createCategory);

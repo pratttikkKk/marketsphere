@@ -310,7 +310,7 @@ class OrderService {
   /**
    * Cancellation workflow with policy enforcement, atomic stock restoration, and refund execution
    */
-  async cancelOrder(customerId, orderId, reason = 'Customer requested cancellation') {
+  async cancelOrder(customerId, orderId, reason = 'Customer requested cancellation', customerRefundUpi = null) {
     const order = await Order.findOne({ _id: orderId, customerId });
     if (!order) throw new Error('Order not found or unauthorized');
 
@@ -319,13 +319,18 @@ class OrderService {
     order.orderStatus = 'CANCELLED';
     order.cancellationReason = reason;
 
+    const refundUpi = customerRefundUpi ? customerRefundUpi.trim() : (order.paymentDetails?.senderUpiId || null);
+    if (refundUpi) {
+      order.paymentDetails.customerRefundUpi = refundUpi;
+    }
+
     // Restore stock atomically
     for (const item of order.orderItems) {
       item.status = 'CANCELLED';
       await Product.updateOne({ _id: item.productId }, { $inc: { stock: item.quantity } });
     }
 
-    // Process refund if order was paid online
+    // Process refund if order was paid online or pending confirmation
     if (order.paymentStatus === 'PAID') {
       try {
         const refundResult = await paymentService.processRefund({
@@ -333,10 +338,28 @@ class OrderService {
           amountInRupees: order.totalAmount,
           notes: reason
         });
-        order.paymentStatus = 'REFUNDED';
-        order.paymentDetails.refundId = refundResult.refundId;
-        order.paymentDetails.refundAmount = order.totalAmount;
-        order.paymentDetails.refundedAt = new Date();
+
+        if (refundResult.status === 'REFUNDED') {
+          order.paymentStatus = 'REFUNDED';
+          order.paymentDetails.refundId = refundResult.refundId;
+          order.paymentDetails.refundAmount = order.totalAmount;
+          order.paymentDetails.refundedAt = new Date();
+          order.timeline.push({
+            status: 'REFUNDED',
+            timestamp: new Date(),
+            note: `Refund of ₹${order.totalAmount} processed successfully via ${refundResult.provider || 'Gateway'}.`
+          });
+        } else {
+          // Direct UPI transfer required from seller or admin
+          order.paymentStatus = 'REFUND_PENDING';
+          order.paymentDetails.refundId = refundResult.refundId;
+          order.paymentDetails.refundMethod = 'UPI';
+          order.timeline.push({
+            status: 'REFUND_PENDING',
+            timestamp: new Date(),
+            note: `Refund of ₹${order.totalAmount} recorded. Direct UPI transfer pending to: ${order.paymentDetails.customerRefundUpi || 'Customer account'}.`
+          });
+        }
       } catch (refundErr) {
         console.error('[REFUND] Error issuing provider refund:', refundErr.message);
         // Do NOT mark as REFUNDED on failure. Set to REFUND_PENDING for administrative review!
@@ -347,6 +370,14 @@ class OrderService {
           note: `Provider refund error: ${refundErr.message}. Pending admin reconciliation.`
         });
       }
+    } else if (order.paymentStatus === 'PENDING_SELLER_CONFIRMATION') {
+      order.paymentStatus = 'REFUND_PENDING';
+      order.paymentDetails.refundMethod = 'UPI';
+      order.timeline.push({
+        status: 'REFUND_PENDING',
+        timestamp: new Date(),
+        note: `Cancelled after payment submission (UTR: ${order.paymentDetails.utrNumber || 'N/A'}). Direct UPI refund required to: ${order.paymentDetails.customerRefundUpi || 'Customer account'}.`
+      });
     }
 
     order.timeline.push({
@@ -370,7 +401,7 @@ class OrderService {
   /**
    * Return request workflow
    */
-  async requestReturn(customerId, orderId, reason) {
+  async requestReturn(customerId, orderId, reason, customerRefundUpi = null) {
     const order = await Order.findOne({ _id: orderId, customerId });
     if (!order) throw new Error('Order not found or unauthorized');
 
@@ -380,10 +411,18 @@ class OrderService {
     order.returnReason = reason || 'Customer requested return';
     order.orderItems.forEach(i => i.status = 'RETURN_REQUESTED');
 
+    const refundUpi = customerRefundUpi ? customerRefundUpi.trim() : (order.paymentDetails?.senderUpiId || null);
+    if (refundUpi) {
+      order.paymentDetails.customerRefundUpi = refundUpi;
+    }
+    if (order.paymentStatus === 'PAID') {
+      order.paymentStatus = 'REFUND_PENDING';
+    }
+
     order.timeline.push({
       status: 'RETURN_REQUESTED',
       timestamp: new Date(),
-      note: `Return requested: ${order.returnReason}`
+      note: `Return requested: ${order.returnReason}${refundUpi ? ` (Refund UPI: ${refundUpi})` : ''}`
     });
 
     await order.save();

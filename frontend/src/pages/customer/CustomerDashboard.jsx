@@ -72,22 +72,50 @@ export default function CustomerDashboard() {
   };
 
   const handleCancelOrder = async (orderId) => {
-    const reason = prompt('Please enter cancellation reason:') || 'Changed mind';
+    const targetOrder = orders.find(o => o._id === orderId);
+    const reason = prompt('Please enter cancellation reason:', 'Changed mind');
+    if (reason === null) return;
+
+    let customerRefundUpi = '';
+    if (targetOrder && (targetOrder.paymentStatus === 'PAID' || targetOrder.paymentStatus === 'PENDING_SELLER_CONFIRMATION')) {
+      customerRefundUpi = prompt(
+        'Please enter your UPI ID for direct refund transfer (e.g. yourname@okhdfcbank, mobile@upi):',
+        targetOrder.paymentDetails?.customerRefundUpi || targetOrder.paymentDetails?.senderUpiId || (user.phone ? `${user.phone}@upi` : '')
+      );
+    }
+
     try {
-      const res = await apiClient.post(`/orders/${orderId}/cancel`, { reason });
-      alert('Order successfully cancelled. Inventory restored.');
-      setOrders(prev => prev.map(o => o._id === orderId ? res.data : o));
+      const res = await apiClient.post(`/orders/${orderId}/cancel`, { 
+        reason: reason || 'Customer requested cancellation',
+        customerRefundUpi: customerRefundUpi || undefined
+      });
+      alert('Order successfully cancelled. Refund has been initiated/queued.');
+      setOrders(prev => prev.map(o => o._id === orderId ? (res.data?.data || res.data) : o));
     } catch (err) {
       alert(err.response?.data?.message || err.message || 'Cancellation failed');
     }
   };
 
   const handleRequestReturn = async (orderId) => {
-    const reason = prompt('Please describe why you are returning this order:') || 'Product defective or damaged';
+    const targetOrder = orders.find(o => o._id === orderId);
+    const reason = prompt('Please describe why you are returning this order:', 'Product defective or damaged');
+    if (reason === null) return;
+
+    let customerRefundUpi = '';
+    if (targetOrder && targetOrder.paymentStatus === 'PAID') {
+      customerRefundUpi = prompt(
+        'Please enter your UPI ID for refund payout upon return inspection:',
+        targetOrder.paymentDetails?.customerRefundUpi || targetOrder.paymentDetails?.senderUpiId || (user.phone ? `${user.phone}@upi` : '')
+      );
+    }
+
     try {
-      const res = await apiClient.post(`/orders/${orderId}/return`, { reason });
-      alert('Return request submitted for administrator review.');
-      setOrders(prev => prev.map(o => o._id === orderId ? res.data : o));
+      const res = await apiClient.post(`/orders/${orderId}/return`, { 
+        reason: reason || 'Customer requested return',
+        customerRefundUpi: customerRefundUpi || undefined
+      });
+      alert('Return request submitted successfully. Awaiting seller/admin confirmation.');
+      setOrders(prev => prev.map(o => o._id === orderId ? (res.data?.data || res.data) : o));
     } catch (err) {
       alert(err.response?.data?.message || err.message || 'Return request failed');
     }
@@ -167,6 +195,27 @@ export default function CustomerDashboard() {
                       {order.trackingNumber && (
                         <span>Tracking: <strong className="font-mono text-blue-600">{order.trackingNumber}</strong></span>
                       )}
+                      {order.paymentStatus === 'REFUND_PENDING' && (
+                        <div className="mt-2 text-xs bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-lg flex items-center justify-between">
+                          <div>
+                            <span className="font-bold">Refund Status:</span> Refund of ₹{order.totalAmount} Pending
+                            <p className="text-[11px] text-rose-700 mt-0.5">
+                              Queued for direct transfer to: <strong className="font-mono">{order.paymentDetails?.customerRefundUpi || 'Your UPI / Bank account'}</strong>
+                            </p>
+                          </div>
+                          <span className="text-[10px] bg-rose-200 text-rose-900 font-bold px-2 py-0.5 rounded">Awaiting Transfer</span>
+                        </div>
+                      )}
+                      {order.paymentStatus === 'REFUNDED' && (
+                        <div className="mt-2 text-xs bg-emerald-50 border border-emerald-200 text-emerald-800 p-2.5 rounded-lg">
+                          <span className="font-bold">✓ Refund Completed:</span> ₹{order.paymentDetails?.refundAmount || order.totalAmount} refunded
+                          {order.paymentDetails?.refundUtr && (
+                            <span className="block text-[11px] font-mono text-emerald-700 mt-0.5">
+                              Bank / UPI UTR: #{order.paymentDetails.refundUtr}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -178,6 +227,7 @@ export default function CustomerDashboard() {
                         isPaid ? 'bg-green-100 text-green-800 border border-green-200' : 
                         order.paymentStatus === 'PENDING_SELLER_CONFIRMATION' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
                         order.paymentStatus === 'REFUNDED' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                        order.paymentStatus === 'REFUND_PENDING' ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse' :
                         'bg-amber-100 text-amber-800 border border-amber-200'
                       }`}>
                         {order.paymentStatus === 'PENDING_SELLER_CONFIRMATION' ? 'UTR SUBMITTED' : (order.paymentStatus || 'PENDING')}

@@ -37,7 +37,7 @@ const orderSchema = new mongoose.Schema({
   },
   paymentMethod: { 
     type: String, 
-    enum: ['COD', 'RAZORPAY', 'SANDBOX', 'UPI', 'CARD'], 
+    enum: ['COD', 'RAZORPAY', 'SANDBOX', 'UPI', 'CARD', 'ONLINE'], 
     required: true 
   },
   paymentStatus: { 
@@ -60,7 +60,11 @@ const orderSchema = new mongoose.Schema({
     paidAt: { type: Date, default: null },
     refundId: { type: String, default: null },
     refundAmount: { type: Number, default: 0 },
-    refundedAt: { type: Date, default: null }
+    refundedAt: { type: Date, default: null },
+    refundMethod: { type: String, default: null },
+    refundUtr: { type: String, default: null },
+    refundNote: { type: String, default: null },
+    customerRefundUpi: { type: String, default: null }
   },
   subtotal: { type: Number, required: true, min: 0 },
   discount: { type: Number, default: 0, min: 0 },

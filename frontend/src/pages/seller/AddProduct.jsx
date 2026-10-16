@@ -10,6 +10,7 @@ export default function AddProduct() {
     price: '',
     stock: '',
     category: '',
+    customCategory: '',
     sellerUpiId: '',
     sellerUpiQr: '',
     imageUrl: 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=500&q=80'
@@ -56,6 +57,11 @@ export default function AddProduct() {
     e.preventDefault();
     if (!formData.sellerUpiId || !formData.sellerUpiId.trim()) {
       setError('Seller UPI ID is mandatory so customers can pay directly via UPI / QR Scanner');
+      return;
+    }
+
+    if (formData.category === 'CUSTOM' && !formData.customCategory?.trim()) {
+      setError('Please type your custom category name or select an existing category.');
       return;
     }
 
@@ -166,7 +172,26 @@ export default function AddProduct() {
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700">Category *</label>
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-semibold text-gray-700">Category *</label>
+              {formData.category === 'CUSTOM' ? (
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, category: categories[0]?._id || '', customCategory: '' })}
+                  className="text-xs text-amber-600 hover:underline font-medium"
+                >
+                  Choose from list
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, category: 'CUSTOM' })}
+                  className="text-xs text-amber-600 hover:underline font-medium"
+                >
+                  + Write Custom Category
+                </button>
+              )}
+            </div>
             <select 
               name="category" 
               value={formData.category} 
@@ -176,7 +201,28 @@ export default function AddProduct() {
             >
               <option value="">Select Category</option>
               {categories.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+              <option value="CUSTOM">✨ + Other / Write Custom Category</option>
             </select>
+
+            {formData.category === 'CUSTOM' && (
+              <div className="mt-2.5 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                <label className="block text-xs font-bold text-amber-900 mb-1">
+                  Custom Category Name *
+                </label>
+                <input
+                  type="text"
+                  name="customCategory"
+                  value={formData.customCategory || ''}
+                  onChange={handleChange}
+                  placeholder="e.g. Handmade Crafts, Fitness Gear, Organic Spices..."
+                  required
+                  className="w-full border border-amber-300 rounded-md p-2 text-sm bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+                <p className="text-[11px] text-amber-700 mt-1">
+                  You have full freedom to define new categories. This category will be created and made browsable across the marketplace.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

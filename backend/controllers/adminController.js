@@ -110,6 +110,25 @@ exports.handleReturn = async (req, res, next) => {
   }
 };
 
+exports.processOrderRefund = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { refundUtr, refundAmount, notes } = req.body;
+    const order = await adminService.processOrderRefund(
+      orderId,
+      { refundUtr, refundAmount, notes },
+      req.user._id || req.user.id
+    );
+    res.json({
+      status: 'success',
+      message: 'Refund successfully processed and recorded by Admin.',
+      data: order
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.updateTracking = async (req, res, next) => {
   try {
     const { orderId } = req.params;

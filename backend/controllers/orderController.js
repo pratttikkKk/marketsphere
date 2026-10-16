@@ -34,7 +34,8 @@ exports.getOrderDetails = async (req, res, next) => {
 
 exports.cancelOrder = async (req, res, next) => {
   try {
-    const order = await orderService.cancelOrder(req.user._id || req.user.id, req.params.id, req.body.reason);
+    const { reason, customerRefundUpi } = req.body;
+    const order = await orderService.cancelOrder(req.user._id || req.user.id, req.params.id, reason, customerRefundUpi);
     res.json({ status: 'success', message: 'Order successfully cancelled', data: order });
   } catch (err) { 
     next(err); 
@@ -58,7 +59,8 @@ exports.confirmPayment = async (req, res, next) => {
 
 exports.requestReturn = async (req, res, next) => {
   try {
-    const order = await orderService.requestReturn(req.user._id || req.user.id, req.params.id, req.body.reason);
+    const { reason, customerRefundUpi } = req.body;
+    const order = await orderService.requestReturn(req.user._id || req.user.id, req.params.id, reason, customerRefundUpi);
     res.json({ status: 'success', message: 'Return requested successfully', data: order });
   } catch (err) { 
     next(err); 

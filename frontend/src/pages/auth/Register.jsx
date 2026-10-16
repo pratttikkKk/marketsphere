@@ -10,9 +10,17 @@ export default function Register() {
     password: '',
     confirmPassword: ''
   });
+  const [step, setStep] = useState('form'); // 'form' | 'otp'
+  const [otp, setOtp] = useState('');
+  const [previewOtp, setPreviewOtp] = useState('');
+  const [verificationEmail, setVerificationEmail] = useState('');
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const navigate = useNavigate();
+
+  const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,28 +33,171 @@ export default function Register() {
 
     setLoading(true);
     setError('');
+    setSuccessMsg('');
 
     try {
       const res = await apiClient.post('/auth/register', {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        email: formData.email.trim().toLowerCase(),
         password: formData.password
       });
 
       if (res.status === 'success') {
-        localStorage.setItem('token', res.data.token);
-        localStorage.setItem('user', JSON.stringify(res.data));
-        navigate('/products');
+        if (res.requiresOtp) {
+          setVerificationEmail(res.email || formData.email);
+          if (res.previewOtp) setPreviewOtp(res.previewOtp);
+          setStep('otp');
+          setSuccessMsg(res.message || 'Verification code sent to your email.');
+        } else if (res.data?.token) {
+          localStorage.setItem('token', res.data.token);
+          localStorage.setItem('user', JSON.stringify(res.data));
+          navigate('/products');
+        }
       }
     } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error?.message || 'Registration failed');
+      setError(err.response?.data?.message || err.response?.data?.error?.message || err.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    if (!otp.trim()) {
+      return setError('Please enter the 6-digit verification code');
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const res = await apiClient.post('/auth/verify-otp', {
+        email: verificationEmail,
+        otp: otp.trim()
+      });
+
+      if (res.status === 'success') {
+        const userData = res.data;
+        if (userData?.token) {
+          localStorage.setItem('token', userData.token);
+          localStorage.setItem('user', JSON.stringify(userData));
+        }
+        alert('Email verified successfully! Welcome to MarketSphere.');
+        navigate('/products');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || err.response?.data?.error?.message || err.message || 'OTP verification failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setResending(true);
+    setError('');
+    setSuccessMsg('');
+    try {
+      const res = await apiClient.post('/auth/resend-otp', { email: verificationEmail });
+      if (res.status === 'success') {
+        if (res.previewOtp) setPreviewOtp(res.previewOtp);
+        setSuccessMsg(res.message || 'A new verification code has been dispatched.');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || 'Failed to resend code');
+    } finally {
+      setResending(false);
+    }
+  };
+
+  if (step === 'otp') {
+    return (
+      <div className="max-w-md mx-auto mt-12 p-8 bg-white rounded-2xl shadow-lg border border-amber-100">
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl text-2xl mb-3 shadow-inner">
+            ✉️
+          </div>
+          <h2 className="text-2xl font-extrabold text-gray-900">Verify Your Email</h2>
+          <p className="text-xs text-gray-500 mt-1">
+            We sent a 6-digit verification OTP to
+          </p>
+          <p className="text-sm font-bold text-gray-800 mt-0.5 font-mono">
+            {verificationEmail}
+          </p>
+        </div>
+
+        {error && (
+          <div className="mb-4 text-red-600 bg-red-50 border border-red-200 p-3 rounded-xl text-xs font-medium">
+            {error}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="mb-4 text-green-700 bg-green-50 border border-green-200 p-3 rounded-xl text-xs font-medium">
+            {successMsg}
+          </div>
+        )}
+
+        {previewOtp && (
+          <div className="mb-5 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
+            <span className="font-bold">Sandbox Dev Mode:</span>
+            <span className="ml-1">Use free test code:</span>
+            <span className="ml-2 font-mono font-extrabold text-base tracking-widest bg-white px-2 py-0.5 rounded border border-amber-300">
+              {previewOtp}
+            </span>
+          </div>
+        )}
+
+        <form onSubmit={handleVerifyOtp} className="space-y-5">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1.5 text-center uppercase tracking-wider">
+              Enter 6-Digit Code
+            </label>
+            <input
+              type="text"
+              maxLength="6"
+              autoFocus
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+              placeholder="••••••"
+              className="w-full text-center text-3xl font-mono font-extrabold tracking-[0.5em] py-3.5 border-2 border-gray-300 rounded-xl focus:border-amber-500 focus:ring-4 focus:ring-amber-100 outline-none transition"
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading || otp.length < 6}
+            className="w-full bg-amber-400 hover:bg-amber-500 text-gray-900 font-bold py-3.5 rounded-xl transition shadow active:scale-95 disabled:opacity-50 text-sm"
+          >
+            {loading ? 'Verifying Code...' : 'Verify Email & Complete Sign Up'}
+          </button>
+        </form>
+
+        <div className="mt-6 pt-5 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+          <button
+            type="button"
+            onClick={handleResendOtp}
+            disabled={resending}
+            className="text-amber-600 hover:text-amber-700 font-semibold hover:underline disabled:opacity-50"
+          >
+            {resending ? 'Sending...' : 'Resend Code'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setStep('form');
+              setError('');
+              setSuccessMsg('');
+            }}
+            className="text-gray-500 hover:text-gray-700 hover:underline"
+          >
+            ← Change Email
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-md mx-auto mt-10 p-8 bg-white rounded-2xl shadow-sm border border-gray-100">
@@ -122,7 +273,7 @@ export default function Register() {
           disabled={loading}
           className="w-full bg-amber-400 text-gray-900 font-bold py-3 rounded-xl hover:bg-amber-500 transition shadow-sm disabled:opacity-50 text-sm"
         >
-          {loading ? 'Creating Account...' : 'Register as Customer'}
+          {loading ? 'Sending Verification Code...' : 'Register with Email OTP'}
         </button>
       </form>
 

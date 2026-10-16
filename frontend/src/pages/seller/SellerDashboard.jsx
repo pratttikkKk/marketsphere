@@ -17,6 +17,13 @@ const SellerDashboard = () => {
   const [verificationError, setVerificationError] = useState(null);
   const [verificationLoading, setVerificationLoading] = useState(false);
 
+  const [refundingOrder, setRefundingOrder] = useState(null);
+  const [refundUtrInput, setRefundUtrInput] = useState('');
+  const [refundAmountInput, setRefundAmountInput] = useState('');
+  const [refundNotesInput, setRefundNotesInput] = useState('');
+  const [refundError, setRefundError] = useState(null);
+  const [refundLoading, setRefundLoading] = useState(false);
+
   const loadDashboard = async () => {
     try {
       const [dashboardResp, ordersResp, productsResp] = await Promise.all([
@@ -89,6 +96,43 @@ const SellerDashboard = () => {
       loadDashboard();
     } catch (err) {
       alert(err.response?.data?.message || err.message || 'Failed to mark COD as paid');
+    }
+  };
+
+  const handleOpenRefundModal = (order) => {
+    setRefundingOrder(order);
+    setRefundAmountInput(order.totalAmount || '');
+    setRefundUtrInput('');
+    setRefundNotesInput('');
+    setRefundError(null);
+  };
+
+  const handleConfirmRefund = async (e) => {
+    e.preventDefault();
+    if (!refundingOrder) return;
+    if (!refundUtrInput.trim()) {
+      setRefundError('Please enter the UPI transaction reference / UTR number from your payment app.');
+      return;
+    }
+    setRefundError(null);
+    setRefundLoading(true);
+
+    try {
+      const res = await apiClient.patch(`/sellers/orders/${refundingOrder._id}/refund`, {
+        refundUtr: refundUtrInput.trim(),
+        refundAmount: Number(refundAmountInput) || refundingOrder.totalAmount,
+        notes: refundNotesInput.trim()
+      });
+
+      const updated = res.data?.data || res.data;
+      alert(`Refund of ₹${refundAmountInput || refundingOrder.totalAmount} recorded! Order marked as REFUNDED.`);
+      setOrders(prev => prev.map(o => o._id === refundingOrder._id ? { ...o, paymentStatus: 'REFUNDED', paymentDetails: updated.paymentDetails || o.paymentDetails } : o));
+      setRefundingOrder(null);
+      loadDashboard();
+    } catch (err) {
+      setRefundError(err.response?.data?.message || err.message || 'Refund processing failed');
+    } finally {
+      setRefundLoading(false);
     }
   };
 
@@ -245,15 +289,27 @@ const SellerDashboard = () => {
                     <div className="space-y-1">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
                         order.paymentStatus === 'PAID' ? 'bg-green-100 text-green-800' :
+                        order.paymentStatus === 'REFUNDED' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                        order.paymentStatus === 'REFUND_PENDING' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
                         order.paymentStatus === 'PENDING_SELLER_CONFIRMATION' ? 'bg-blue-100 text-blue-800' :
                         'bg-yellow-100 text-yellow-800'
                       }`}>
                         {order.paymentStatus === 'PENDING_SELLER_CONFIRMATION' ? 'UTR SUBMITTED' : (order.paymentStatus || 'PENDING')}
                       </span>
+                      {order.paymentStatus === 'REFUND_PENDING' && (
+                        <p className="text-[11px] text-rose-700 font-semibold">
+                          Refund Pending {order.paymentDetails?.customerRefundUpi ? `to: ${order.paymentDetails.customerRefundUpi}` : ''}
+                        </p>
+                      )}
+                      {order.paymentStatus === 'REFUNDED' && order.paymentDetails?.refundUtr && (
+                        <p className="text-[11px] font-mono text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
+                          Refund UTR: #{order.paymentDetails.refundUtr}
+                        </p>
+                      )}
                       <p className="text-[11px] text-gray-500 font-medium">Method: {order.paymentMethod}</p>
-                      {order.paymentDetails?.utrNumber && (
+                      {order.paymentDetails?.utrNumber && order.paymentStatus !== 'REFUNDED' && (
                         <p className="text-[11px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                          UTR: {order.paymentDetails.utrNumber}
+                          Payment UTR: {order.paymentDetails.utrNumber}
                         </p>
                       )}
                       {order.paymentDetails?.verifiedBySellerAt && (
@@ -274,12 +330,22 @@ const SellerDashboard = () => {
                   <td className='py-3 px-4 text-right space-y-1.5'>
                     <div className="flex flex-wrap justify-end gap-1.5">
                       {/* Online Payment Verification */}
-                      {order.paymentStatus !== 'PAID' && order.paymentMethod !== 'COD' && (
+                      {order.paymentStatus !== 'PAID' && order.paymentStatus !== 'REFUNDED' && order.paymentStatus !== 'REFUND_PENDING' && order.paymentMethod !== 'COD' && (
                         <button
                           onClick={() => handleOpenVerifyModal(order)}
                           className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded text-xs font-bold shadow-sm transition active:scale-95 whitespace-nowrap"
                         >
                           Verify & Mark Paid
+                        </button>
+                      )}
+
+                      {/* Process Refund Action for Cancelled, Returned, or Refund-Pending orders */}
+                      {(order.paymentStatus === 'REFUND_PENDING' || (order.paymentStatus === 'PAID' && ['CANCELLED', 'RETURNED', 'RETURN_REQUESTED'].includes(order.orderStatus))) && (
+                        <button
+                          onClick={() => handleOpenRefundModal(order)}
+                          className="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded text-xs font-bold shadow-sm transition active:scale-95 whitespace-nowrap"
+                        >
+                          Process Refund
                         </button>
                       )}
 
@@ -479,6 +545,111 @@ const SellerDashboard = () => {
                   className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md transition disabled:opacity-50"
                 >
                   {verificationLoading ? 'Verifying...' : 'Confirm & Mark Paid'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Process Refund Modal */}
+      {refundingOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-rose-100">
+            <div className="flex justify-between items-start border-b pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-1.5">
+                  <span className="text-rose-600">💸</span> Process Customer Refund
+                </h3>
+                <p className="text-xs text-gray-500 font-mono mt-0.5">
+                  Order #{String(refundingOrder._id).slice(-8).toUpperCase()}
+                </p>
+              </div>
+              <button 
+                onClick={() => setRefundingOrder(null)}
+                className="text-gray-400 hover:text-gray-600 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {refundError && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3 rounded-lg">
+                {refundError}
+              </div>
+            )}
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 space-y-1.5 text-xs text-amber-900">
+              <p className="font-bold flex items-center gap-1">
+                <span>📍</span> Customer Refund Destination:
+              </p>
+              <div className="bg-white p-2 rounded border border-amber-200 font-mono text-sm font-bold text-gray-900 select-all">
+                {refundingOrder.paymentDetails?.customerRefundUpi || refundingOrder.paymentDetails?.senderUpiId || 'No UPI recorded (Contact customer)'}
+              </div>
+              <p className="text-[11px] text-amber-700">
+                Please transfer ₹{refundingOrder.totalAmount} to the customer's UPI ID above using PhonePe, GPay, Paytm, or your bank app.
+              </p>
+            </div>
+
+            <form onSubmit={handleConfirmRefund} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Refund Amount (₹) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={refundAmountInput}
+                  onChange={(e) => setRefundAmountInput(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-rose-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Refund Bank / UPI Transaction Reference (UTR) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={refundUtrInput}
+                  onChange={(e) => setRefundUtrInput(e.target.value)}
+                  placeholder="12-digit UPI UTR from your bank payment"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-rose-500 outline-none"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">
+                  This UTR will be shared with the customer as verifiable proof of refund.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Notes / Reason
+                </label>
+                <input
+                  type="text"
+                  value={refundNotesInput}
+                  onChange={(e) => setRefundNotesInput(e.target.value)}
+                  placeholder="e.g. Returned item inspected and refund issued"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-rose-500 outline-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRefundingOrder(null)}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-2.5 rounded-xl text-xs transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={refundLoading}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md transition disabled:opacity-50"
+                >
+                  {refundLoading ? 'Recording Refund...' : 'Confirm Refund Sent'}
                 </button>
               </div>
             </form>

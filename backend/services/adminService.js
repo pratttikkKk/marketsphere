@@ -201,24 +201,35 @@ class AdminService {
 
       // Process refund
       const amountToRefund = refundAmount !== null ? Number(refundAmount) : order.totalAmount;
-      if (order.paymentStatus === 'PAID') {
+      if (order.paymentStatus === 'PAID' || order.paymentStatus === 'REFUND_PENDING') {
         try {
           const refundResult = await paymentService.processRefund({
             paymentId: order.paymentDetails?.providerPaymentId,
             amountInRupees: amountToRefund,
             notes: `Return approved by admin: ${reason}`
           });
-          order.paymentStatus = 'REFUNDED';
-          order.paymentDetails.refundId = refundResult.refundId;
-          order.paymentDetails.refundAmount = amountToRefund;
-          order.paymentDetails.refundedAt = new Date();
+          if (refundResult.status === 'REFUNDED') {
+            order.paymentStatus = 'REFUNDED';
+            order.paymentDetails.refundId = refundResult.refundId;
+            order.paymentDetails.refundAmount = amountToRefund;
+            order.paymentDetails.refundedAt = new Date();
+          } else {
+            order.paymentStatus = 'REFUND_PENDING';
+            order.paymentDetails.refundId = refundResult.refundId;
+            order.paymentDetails.refundMethod = 'UPI';
+            order.timeline.push({
+              status: 'REFUND_PENDING',
+              timestamp: new Date(),
+              note: `Return approved. Payout of ₹${amountToRefund} queued for customer UPI (${order.paymentDetails.customerRefundUpi || 'Customer account'}).`
+            });
+          }
         } catch (err) {
           console.error('[REFUND] Provider error during return approval:', err.message);
-          order.paymentStatus = 'REFUND_FAILED';
+          order.paymentStatus = 'REFUND_PENDING';
           order.timeline.push({
-            status: 'REFUND_FAILED',
+            status: 'REFUND_PENDING',
             timestamp: new Date(),
-            note: `Provider refund execution error: ${err.message}`
+            note: `Provider refund notice: ${err.message}. Awaiting direct transfer.`
           });
         }
       }
@@ -302,6 +313,42 @@ class AdminService {
       targetType: 'Order',
       targetId: order._id,
       metadata: { carrier, trackingNumber, status }
+    });
+
+    return order;
+  }
+
+  async processOrderRefund(orderId, { refundUtr, refundAmount, notes }, adminUserId) {
+    const order = await Order.findById(orderId);
+    if (!order) throw new Error('Order not found');
+
+    if (!refundUtr || String(refundUtr).trim() === '') {
+      throw new Error('Refund Bank / UPI Reference (UTR) is required');
+    }
+
+    const amountNum = refundAmount !== undefined && refundAmount !== null ? Number(refundAmount) : order.totalAmount;
+    order.paymentStatus = 'REFUNDED';
+    order.paymentDetails.refundUtr = String(refundUtr).trim();
+    order.paymentDetails.refundAmount = amountNum;
+    order.paymentDetails.refundMethod = 'ADMIN_DIRECT_UPI';
+    order.paymentDetails.refundedAt = new Date();
+    order.paymentDetails.refundNote = notes || 'Refund verified and processed by platform Admin';
+
+    order.timeline.push({
+      status: 'REFUNDED',
+      timestamp: new Date(),
+      note: `Refund of ₹${amountNum} completed by Admin. UTR: ${refundUtr}`
+    });
+
+    await order.save();
+
+    await this.logAdminAction({
+      adminId: adminUserId ? new mongoose.Types.ObjectId(adminUserId) : new mongoose.Types.ObjectId(),
+      action: 'REFUND_PROCESSED',
+      targetType: 'Order',
+      targetId: order._id,
+      reason: notes || 'Direct refund',
+      metadata: { refundUtr, refundAmount: amountNum }
     });
 
     return order;

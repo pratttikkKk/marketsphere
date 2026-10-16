@@ -126,3 +126,22 @@ exports.markOrderAsPaid = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.processOrderRefund = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { refundUtr, refundAmount, notes } = req.body;
+    const order = await sellerDashboardService.processOrderRefund(
+      req.user._id || req.user.id,
+      orderId,
+      { refundUtr, refundAmount, notes }
+    );
+    res.json({
+      status: 'success',
+      message: 'Refund successfully recorded and confirmed.',
+      data: order
+    });
+  } catch (error) {
+    next(error);
+  }
+};

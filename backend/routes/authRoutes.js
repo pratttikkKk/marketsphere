@@ -4,6 +4,8 @@ const authController = require('../controllers/authController');
 const { requireAuth } = require('../middlewares/auth');
 
 router.post('/register', authController.register);
+router.post('/verify-otp', authController.verifyEmailOtp);
+router.post('/resend-otp', authController.resendEmailOtp);
 router.post('/login', authController.login);
 router.get('/me', requireAuth, authController.getMe);
 router.post('/change-password', requireAuth, authController.changePassword);

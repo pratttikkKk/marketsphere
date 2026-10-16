@@ -1,8 +1,52 @@
+const mongoose = require('mongoose');
 const Product = require('../models/Product');
 const Seller = require('../models/Seller');
 const Category = require('../models/Category');
 
 class ProductService {
+  async _resolveCategory(categoryInput, customCategoryName) {
+    const customName = (customCategoryName || '').trim();
+    if (customName) {
+      const slug = customName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `cat-${Date.now()}`;
+      let cat = await Category.findOne({
+        $or: [
+          { name: { $regex: new RegExp(`^${customName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+          { slug }
+        ]
+      });
+      if (!cat) {
+        cat = await Category.create({ name: customName, slug });
+      }
+      return cat._id;
+    }
+
+    if (categoryInput && mongoose.Types.ObjectId.isValid(categoryInput)) {
+      const exists = await Category.findById(categoryInput);
+      if (exists) return exists._id;
+    }
+
+    if (categoryInput && typeof categoryInput === 'string' && categoryInput.trim()) {
+      const name = categoryInput.trim();
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `cat-${Date.now()}`;
+      let cat = await Category.findOne({
+        $or: [
+          { name: { $regex: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+          { slug }
+        ]
+      });
+      if (!cat) {
+        cat = await Category.create({ name, slug });
+      }
+      return cat._id;
+    }
+
+    let defaultCat = await Category.findOne();
+    if (!defaultCat) {
+      defaultCat = await Category.create({ name: 'General', slug: 'general' });
+    }
+    return defaultCat._id;
+  }
+
   async createProduct(sellerUserId, productData) {
     const seller = await Seller.findOne({ userId: sellerUserId });
     if (!seller) {
@@ -14,15 +58,8 @@ class ProductService {
       throw err;
     }
 
-    // Ensure category exists
-    let categoryId = productData.category;
-    if (!categoryId) {
-      let defaultCat = await Category.findOne();
-      if (!defaultCat) {
-        defaultCat = await Category.create({ name: 'General', slug: 'general', description: 'General items' });
-      }
-      categoryId = defaultCat._id;
-    }
+    // Ensure category exists or create custom category
+    const categoryId = await this._resolveCategory(productData.category, productData.customCategory);
 
     const price = Number(productData.price);
     if (isNaN(price) || price < 0) {
@@ -95,7 +132,9 @@ class ProductService {
       if (isNaN(s) || s < 0) throw new Error('Invalid stock quantity');
       product.stock = s;
     }
-    if (updateData.category !== undefined) product.category = updateData.category;
+    if (updateData.category !== undefined || updateData.customCategory !== undefined) {
+      product.category = await this._resolveCategory(updateData.category, updateData.customCategory);
+    }
     if (updateData.attributes !== undefined) product.attributes = updateData.attributes;
     if (updateData.variants !== undefined) product.variants = updateData.variants;
     if (updateData.images !== undefined && Array.isArray(updateData.images)) {

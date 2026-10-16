@@ -251,6 +251,45 @@ class SellerDashboardService {
     await order.save();
     return order;
   }
+
+  /**
+   * Seller processes/settles refund for cancelled or returned orders
+   */
+  async processOrderRefund(userId, orderId, { refundUtr, refundAmount, notes }) {
+    const seller = await this._getApprovedSeller(userId);
+    const order = await Order.findById(orderId);
+    if (!order) throw new Error('Order not found');
+
+    const belongsToSeller = order.orderItems.some(i => i.sellerId.toString() === seller._id.toString());
+    if (!belongsToSeller) {
+      throw new Error('Unauthorized: No items in this order belong to your store');
+    }
+
+    if (!refundUtr || String(refundUtr).trim() === '') {
+      throw new Error('Refund Bank / UPI Reference (UTR) is required to verify payout to customer');
+    }
+
+    const amountNum = refundAmount !== undefined && refundAmount !== null ? Number(refundAmount) : order.totalAmount;
+    if (isNaN(amountNum) || amountNum <= 0) {
+      throw new Error('Invalid refund amount');
+    }
+
+    order.paymentStatus = 'REFUNDED';
+    order.paymentDetails.refundUtr = String(refundUtr).trim();
+    order.paymentDetails.refundAmount = amountNum;
+    order.paymentDetails.refundMethod = 'SELLER_DIRECT_UPI';
+    order.paymentDetails.refundedAt = new Date();
+    order.paymentDetails.refundNote = notes || `Refund processed by seller (${seller.storeName})`;
+
+    order.timeline.push({
+      status: 'REFUNDED',
+      timestamp: new Date(),
+      note: `Refund of ₹${amountNum} successfully transferred to customer account by seller (${seller.storeName}). UPI / Bank UTR: ${refundUtr}`
+    });
+
+    await order.save();
+    return order;
+  }
 }
 
 module.exports = new SellerDashboardService();
