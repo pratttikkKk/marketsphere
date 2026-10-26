@@ -468,3 +468,34 @@ exports.deleteAddress = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.testEmailStatus = async (req, res, next) => {
+  try {
+    const to = (req.query.to || process.env.GMAIL_USER || 'pratikfarate33@gmail.com').trim();
+    const config = {
+      gmailUser: process.env.GMAIL_USER || 'pratikfarate33@gmail.com',
+      hasAppPassword: Boolean(process.env.GMAIL_APP_PASSWORD),
+      hasGmailWebhook: Boolean(process.env.GMAIL_WEBHOOK_URL),
+      webhookContainsPlaceholder: Boolean(process.env.GMAIL_WEBHOOK_URL && process.env.GMAIL_WEBHOOK_URL.includes('YOUR_DEPLOYMENT_ID')),
+      hasResend: Boolean(process.env.RESEND_API_KEY),
+      hasBrevo: Boolean(process.env.BREVO_API_KEY)
+    };
+
+    const result = await emailService.sendEmail(
+      to,
+      'MarketSphere Email Integration Test',
+      'This is a test verification message to confirm that your email relay is active.',
+      'GENERAL',
+      '<div style="font-family:sans-serif;padding:20px;border:1px solid #e2e8f0;border-radius:8px;"><h2>MarketSphere Live Email Relay is ACTIVE</h2><p>Your email integration is working properly.</p></div>'
+    );
+
+    res.json({
+      status: result.delivered ? 'success' : 'failed',
+      config,
+      result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

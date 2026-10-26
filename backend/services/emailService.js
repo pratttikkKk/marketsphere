@@ -175,41 +175,65 @@ class EmailService {
 
     const webhookUrl = process.env.GMAIL_WEBHOOK_URL || process.env.EMAIL_WEBHOOK_URL;
     if (webhookUrl) {
-      try {
-        const https = webhookUrl.startsWith('https') ? require('https') : require('http');
-        const urlObj = new URL(webhookUrl);
-        const payload = JSON.stringify({
-          to,
-          subject,
-          html,
-          text
-        });
+      if (webhookUrl.includes('YOUR_DEPLOYMENT_ID')) {
+        console.warn('[EMAIL WEBHOOK CONFIG WARNING] GMAIL_WEBHOOK_URL contains "YOUR_DEPLOYMENT_ID" placeholder. Replace with your actual Google Apps Script deployment ID.');
+      } else {
+        try {
+          const payload = JSON.stringify({ to, subject, html, text });
+          let resStatus = 0;
+          let resText = '';
 
-        const res = await new Promise((resolve, reject) => {
-          const req = https.request(urlObj, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Content-Length': Buffer.byteLength(payload)
-            },
-            timeout: 10000
-          }, (response) => {
-            let data = '';
-            response.on('data', chunk => data += chunk);
-            response.on('end', () => resolve({ statusCode: response.statusCode, data }));
-          });
-          req.on('error', reject);
-          req.on('timeout', () => { req.destroy(); reject(new Error('Email Webhook timeout')); });
-          req.write(payload);
-          req.end();
-        });
+          if (typeof fetch === 'function') {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 15000);
+            try {
+              const response = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: payload,
+                redirect: 'follow',
+                signal: controller.signal
+              });
+              clearTimeout(timer);
+              resStatus = response.status;
+              resText = await response.text();
+            } catch (fetchErr) {
+              clearTimeout(timer);
+              throw fetchErr;
+            }
+          } else {
+            const https = webhookUrl.startsWith('https') ? require('https') : require('http');
+            const urlObj = new URL(webhookUrl);
+            const res = await new Promise((resolve, reject) => {
+              const req = https.request(urlObj, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Content-Length': Buffer.byteLength(payload)
+                },
+                timeout: 15000
+              }, (response) => {
+                let data = '';
+                response.on('data', chunk => data += chunk);
+                response.on('end', () => resolve({ statusCode: response.statusCode, data }));
+              });
+              req.on('error', reject);
+              req.on('timeout', () => { req.destroy(); reject(new Error('Email Webhook timeout')); });
+              req.write(payload);
+              req.end();
+            });
+            resStatus = res.statusCode;
+            resText = res.data;
+          }
 
-        if (res.statusCode >= 200 && res.statusCode < 400) {
-          console.log(`[EMAIL DISPATCH SUCCESS] Delivered via Email Webhook to ${to}`);
-          return { delivered: true, provider: 'EMAIL_WEBHOOK' };
+          console.log(`[EMAIL WEBHOOK DISPATCH] HTTP ${resStatus} Response: ${resText.slice(0, 150)}`);
+          if (resStatus >= 200 && resStatus < 400) {
+            console.log(`[EMAIL DISPATCH SUCCESS] Delivered via Email Webhook to ${to}`);
+            return { delivered: true, provider: 'EMAIL_WEBHOOK', response: resText.slice(0, 100) };
+          }
+        } catch (err) {
+          console.warn(`[EMAIL DISPATCH WARNING] Email Webhook dispatch failed: ${err.message}`);
         }
-      } catch (err) {
-        console.warn(`[EMAIL DISPATCH WARNING] Email Webhook dispatch failed: ${err.message}`);
       }
     }
 

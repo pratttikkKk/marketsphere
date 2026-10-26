@@ -12,5 +12,6 @@ router.post('/change-password', requireAuth, authController.changePassword);
 router.put('/profile', requireAuth, authController.updateProfile);
 router.post('/addresses', requireAuth, authController.addAddress);
 router.delete('/addresses/:addressId', requireAuth, authController.deleteAddress);
+router.get('/test-email-status', authController.testEmailStatus);
 
 module.exports = router;
