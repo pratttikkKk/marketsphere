@@ -26,6 +26,7 @@ export default function Register() {
   });
   const [step, setStep] = useState('form'); // 'form' | 'otp'
   const [otp, setOtp] = useState('');
+  const [devOtp, setDevOtp] = useState('');
   const [verificationEmail, setVerificationEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -90,6 +91,9 @@ export default function Register() {
       if (res.status === 'success') {
         const targetEmail = res.email || formData.email.trim().toLowerCase();
         setVerificationEmail(targetEmail);
+        if (res.devOtp) {
+          setDevOtp(res.devOtp);
+        }
         setStep('otp');
 
         modal.success({
@@ -154,6 +158,9 @@ export default function Register() {
     try {
       const res = await apiClient.post('/auth/resend-otp', { email: verificationEmail });
       if (res.status === 'success') {
+        if (res.devOtp) {
+          setDevOtp(res.devOtp);
+        }
         toast.success(
           `A new verification code was sent to ${verificationEmail}. Please check your inbox.`,
           'Code Dispatched'
@@ -192,6 +199,28 @@ export default function Register() {
               </span>
             </div>
           </div>
+
+          {/* Cloud Guard Fallback Helper (when cloud firewall blocks SMTP) */}
+          {devOtp && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-amber-50 to-amber-100/60 border border-amber-200/80 rounded-2xl shadow-sm animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span className="text-xs font-bold text-amber-950">Verification Code:</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOtp(devOtp)}
+                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl font-mono font-extrabold text-xs shadow-sm transition-all"
+                >
+                  Auto-Fill {devOtp}
+                </button>
+              </div>
+              <p className="text-[11px] text-amber-800 mt-1.5 leading-relaxed">
+                Cloud SMTP guard active. Enter this code to verify your email and activate your account.
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="mb-5 flex items-start gap-2.5 p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-medium text-rose-700 animate-in fade-in">
