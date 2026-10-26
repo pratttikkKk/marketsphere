@@ -6,18 +6,18 @@ const Product = require('../models/Product');
 const Seller = require('../models/Seller');
 const Category = require('../models/Category');
 
-let mongoServer;
+const { connectTestDb, disconnectTestDb, clearDatabase } = require('./testHelper');
+
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  await connectTestDb();
 });
+
 afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
+  await disconnectTestDb();
 });
+
 afterEach(async () => {
-  const collections = mongoose.connection.collections;
-  for (const key in collections) await collections[key].deleteMany();
+  await clearDatabase();
 });
 
 describe('Checkout and Orders', () => {

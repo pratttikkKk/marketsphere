@@ -10,23 +10,18 @@ const adminService = require('../services/adminService');
 const orderService = require('../services/orderService');
 const productService = require('../services/productService');
 
-let mongoServer;
+const { connectTestDb, disconnectTestDb, clearDatabase } = require('./testHelper');
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  await connectTestDb();
 });
 
 afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
+  await disconnectTestDb();
 });
 
 afterEach(async () => {
-  const collections = mongoose.connection.collections;
-  for (const key in collections) {
-    await collections[key].deleteMany();
-  }
+  await clearDatabase();
 });
 
 describe('Dashboard analytics and authorization', () => {

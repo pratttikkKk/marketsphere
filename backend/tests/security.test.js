@@ -13,18 +13,18 @@ const productService = require('../services/productService');
 const paymentService = require('../services/paymentService');
 const orderService = require('../services/orderService');
 
-let mongoServer;
+const { connectTestDb, disconnectTestDb, clearDatabase } = require('./testHelper');
+
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  await connectTestDb();
 });
+
 afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
+  await disconnectTestDb();
 });
+
 afterEach(async () => {
-  const collections = mongoose.connection.collections;
-  for (const key in collections) await collections[key].deleteMany();
+  await clearDatabase();
 });
 
 describe('Security & RBAC Enforcement Suite', () => {

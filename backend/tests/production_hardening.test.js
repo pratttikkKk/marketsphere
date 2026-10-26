@@ -22,9 +22,8 @@ describe('Production Hardening & Verification Suite', () => {
   let testProduct;
 
   beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    const uri = mongoServer.getUri();
-    await mongoose.connect(uri);
+    const { connectTestDb } = require('./testHelper');
+    await connectTestDb();
 
     testCustomer = await User.create({
       firstName: 'Hardening',
@@ -67,8 +66,8 @@ describe('Production Hardening & Verification Suite', () => {
   });
 
   afterAll(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
+    const { disconnectTestDb } = require('./testHelper');
+    await disconnectTestDb();
   });
 
   describe('1. Centralized Order & Payment State Machine', () => {

@@ -1,15 +1,16 @@
-const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
 const Coupon = require('../models/Coupon');
+const { connectTestDb, disconnectTestDb, clearDatabase } = require('./testHelper');
 
-let mongoServer;
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  await connectTestDb();
 });
+
 afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
+  await disconnectTestDb();
+});
+
+afterEach(async () => {
+  await clearDatabase();
 });
 
 describe('Commerce Features', () => {

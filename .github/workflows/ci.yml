@@ -11,6 +11,12 @@ jobs:
     name: Backend Test Suite & Health
     runs-on: ubuntu-latest
 
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -28,7 +34,10 @@ jobs:
 
       - name: Run Backend Automated Tests (Jest)
         working-directory: backend
-        run: npm test
+        env:
+          MONGO_URI: mongodb://127.0.0.1:27017/marketsphere_ci_test
+          JWT_SECRET: marketsphere_jwt_secure_ci_test_secret_key_2026_enterprise
+        run: npm test -- --runInBand --forceExit
 
   frontend-build:
     name: Frontend Build & Lint
