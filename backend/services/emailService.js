@@ -88,9 +88,8 @@ class EmailService {
         return { delivered: false, error: errorMsg };
       }
 
-      const fromAddress = process.env.EMAIL_FROM || 
-                          (process.env.GMAIL_USER ? `"MarketSphere" <${process.env.GMAIL_USER.trim()}>` : null) || 
-                          '"MarketSphere" <no-reply@marketsphere.com>';
+      const gmailUser = (process.env.GMAIL_USER || 'pratikfarate33@gmail.com').trim();
+      const fromAddress = process.env.EMAIL_FROM || `"MarketSphere" <${gmailUser}>`;
 
       const mailOptions = {
         from: fromAddress,

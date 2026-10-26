@@ -12,7 +12,6 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT=5002
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY . .
@@ -23,10 +22,7 @@ RUN mkdir -p /app/uploads && chown -R node:node /app && chmod -R 777 /app/upload
 # Non-root user for security
 USER node
 
-EXPOSE 5002
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:5002/api/v1/health || exit 1
+EXPOSE 5002 10000
 
 CMD ["node", "server.js"]
 
