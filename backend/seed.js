@@ -25,7 +25,9 @@ async function seed() {
       lastName: 'User',
       email: 'admin@marketsphere.com',
       passwordHash,
-      role: 'ADMIN'
+      phone: '+919876543201',
+      role: 'ADMIN',
+      isEmailVerified: true
     });
     console.log('Created Admin: admin@marketsphere.com / password123');
 
@@ -35,7 +37,9 @@ async function seed() {
       lastName: 'Doe',
       email: 'customer@marketsphere.com',
       passwordHash,
-      role: 'CUSTOMER'
+      phone: '+919876543202',
+      role: 'CUSTOMER',
+      isEmailVerified: true
     });
     console.log('Created Customer: customer@marketsphere.com / password123');
 
@@ -45,7 +49,9 @@ async function seed() {
       lastName: 'Smith',
       email: 'seller@marketsphere.com',
       passwordHash,
-      role: 'SELLER'
+      phone: '+919876543203',
+      role: 'SELLER',
+      isEmailVerified: true
     });
     console.log('Created Seller User: seller@marketsphere.com / password123');
 

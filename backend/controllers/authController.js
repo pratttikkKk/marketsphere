@@ -1,10 +1,13 @@
 const crypto = require('crypto');
 const User = require('../models/User');
+const PendingUser = require('../models/PendingUser');
 const Seller = require('../models/Seller');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { getJwtSecret } = require('../middlewares/auth');
 const emailService = require('../services/emailService');
+
+const { validateRealEmail, validateMobileNumber } = require('../utils/emailValidator');
 
 const generateToken = (id, role) => {
   return jwt.sign({ id, role }, getJwtSecret(), {
@@ -14,53 +17,91 @@ const generateToken = (id, role) => {
 
 exports.register = async (req, res, next) => {
   try {
-    const { firstName, lastName, email, password } = req.body;
+    const { firstName, lastName, email, phone, password } = req.body;
 
     // Strict input validation
-    if (!firstName || !lastName || !email || !password) {
-      return res.status(400).json({ status: 'error', message: 'All fields (firstName, lastName, email, password) are required' });
+    if (!firstName || !lastName || !email || !phone || !password) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'All fields (First Name, Last Name, Email, Mobile Number, Password) are required' 
+      });
     }
 
     if (password.length < 6) {
       return res.status(400).json({ status: 'error', message: 'Password must be at least 6 characters' });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const userExists = await User.findOne({ email: normalizedEmail });
+    // 1. Verify that email is syntactically valid, not disposable, and domain has active MX servers
+    const emailValidation = await validateRealEmail(email);
+    if (!emailValidation.isValid) {
+      return res.status(400).json({ status: 'error', message: emailValidation.message });
+    }
+    const normalizedEmail = emailValidation.normalizedEmail;
 
-    if (userExists) {
-      return res.status(400).json({ status: 'error', message: 'User already exists with this email' });
+    // 2. Validate mobile number format
+    const phoneValidation = validateMobileNumber(phone);
+    if (!phoneValidation.isValid) {
+      return res.status(400).json({ status: 'error', message: phoneValidation.message });
+    }
+    const normalizedPhone = phoneValidation.normalizedPhone;
+
+    // 3. Verify uniqueness of Email in confirmed Users
+    const emailExists = await User.findOne({ email: normalizedEmail });
+    if (emailExists) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'An account is already registered with this email address. Please sign in or use another email.' 
+      });
+    }
+
+    // 4. Verify uniqueness of Mobile Number in confirmed Users
+    const phoneExists = await User.findOne({ phone: normalizedPhone });
+    if (phoneExists) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'An account is already registered with this mobile number. Each mobile number can only be linked to one account.' 
+      });
     }
 
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Generate accurate 6-digit numeric OTP
+    // Generate cryptographically secure 6-digit numeric OTP
     const otp = crypto.randomInt(100000, 1000000).toString();
     const emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // SECURITY ENFORCEMENT: Public registration ALWAYS assigns 'CUSTOMER'.
-    const user = await User.create({
+    // CRITICAL FIX: Clear any existing unverified pending registration for this email or phone
+    await PendingUser.deleteMany({
+      $or: [{ email: normalizedEmail }, { phone: normalizedPhone }]
+    });
+
+    // Save strictly to PendingUser collection ONLY.
+    // The permanent User record is NEVER created until the user enters the valid OTP!
+    await PendingUser.create({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: normalizedEmail,
+      phone: normalizedPhone,
       passwordHash,
-      role: 'CUSTOMER',
-      isActive: true,
-      isEmailVerified: false,
-      emailOtp: otp,
-      emailOtpExpires
+      otp,
+      otpExpires: emailOtpExpires
     });
 
-    // Send verification OTP email for free
-    await emailService.sendOtpEmail(user.email, otp);
+    // Dispatch OTP email
+    const emailDispatch = await emailService.sendOtpEmail(normalizedEmail, otp);
+    if (!emailDispatch.delivered) {
+      await PendingUser.deleteMany({ email: normalizedEmail });
+      return res.status(503).json({
+        status: 'error',
+        message: emailDispatch.error || 'Unable to deliver verification email to your email address. Please ensure email service is configured in backend/.env.'
+      });
+    }
 
     res.status(201).json({
       status: 'success',
-      message: 'Account registered! A 6-digit verification code has been sent to your email.',
+      message: `A 6-digit verification code has been dispatched to your email address (${normalizedEmail}). Please check your inbox.`,
       requiresOtp: true,
-      email: user.email,
-      ...(!emailService.isConfigured || process.env.NODE_ENV !== 'production' ? { previewOtp: otp } : {})
+      email: normalizedEmail
     });
   } catch (error) {
     next(error);
@@ -75,43 +116,96 @@ exports.verifyEmailOtp = async (req, res, next) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const user = await User.findOne({ email: normalizedEmail });
 
-    if (!user) {
-      return res.status(404).json({ status: 'error', message: 'User not found with this email' });
-    }
+    // 1. First look up the pending registration
+    const pending = await PendingUser.findOne({ email: normalizedEmail });
 
-    if (user.isEmailVerified) {
-      return res.json({
-        status: 'success',
-        message: 'Email is already verified. You can log in.',
-        data: {
-          _id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          role: user.role,
-          token: generateToken(user._id, user.role)
+    if (!pending) {
+      // Check if user is already verified and active in User collection
+      const existingUser = await User.findOne({ email: normalizedEmail });
+      if (existingUser && existingUser.isEmailVerified) {
+        return res.json({
+          status: 'success',
+          message: 'Email is already verified. You can log in.',
+          data: {
+            _id: existingUser._id,
+            firstName: existingUser.firstName,
+            lastName: existingUser.lastName,
+            email: existingUser.email,
+            role: existingUser.role,
+            token: generateToken(existingUser._id, existingUser.role)
+          }
+        });
+      }
+
+      // Check if there is an older legacy user pending verification
+      if (existingUser && !existingUser.isEmailVerified && existingUser.emailOtp) {
+        if (new Date() > new Date(existingUser.emailOtpExpires)) {
+          return res.status(400).json({ status: 'error', message: 'Verification code has expired. Please request a new OTP.' });
         }
+        if (String(existingUser.emailOtp).trim() === String(otp).trim()) {
+          existingUser.isEmailVerified = true;
+          existingUser.emailOtp = null;
+          existingUser.emailOtpExpires = null;
+          await existingUser.save();
+
+          return res.json({
+            status: 'success',
+            message: 'Email verified successfully! Welcome to MarketSphere.',
+            data: {
+              _id: existingUser._id,
+              firstName: existingUser.firstName,
+              lastName: existingUser.lastName,
+              email: existingUser.email,
+              role: existingUser.role,
+              token: generateToken(existingUser._id, existingUser.role)
+            }
+          });
+        }
+      }
+
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'No pending registration found for this email address. Please register again.' 
       });
     }
 
-    if (!user.emailOtp || !user.emailOtpExpires) {
-      return res.status(400).json({ status: 'error', message: 'No pending verification OTP found. Please request a new code.' });
-    }
-
-    if (new Date() > new Date(user.emailOtpExpires)) {
+    if (new Date() > new Date(pending.otpExpires)) {
       return res.status(400).json({ status: 'error', message: 'Verification code has expired. Please request a new OTP.' });
     }
 
-    if (String(user.emailOtp).trim() !== String(otp).trim()) {
+    if (String(pending.otp).trim() !== String(otp).trim()) {
+      pending.attempts = (pending.attempts || 0) + 1;
+      await pending.save();
       return res.status(400).json({ status: 'error', message: 'Invalid verification code. Please check your email and try again.' });
     }
 
-    user.isEmailVerified = true;
-    user.emailOtp = null;
-    user.emailOtpExpires = null;
-    await user.save();
+    // Double check email & phone uniqueness in confirmed User collection
+    const emailTaken = await User.findOne({ email: pending.email });
+    if (emailTaken) {
+      await PendingUser.deleteMany({ email: pending.email });
+      return res.status(400).json({ status: 'error', message: 'An account is already verified with this email address.' });
+    }
+
+    const phoneTaken = await User.findOne({ phone: pending.phone });
+    if (phoneTaken) {
+      return res.status(400).json({ status: 'error', message: 'This mobile number is already linked to an existing account.' });
+    }
+
+    // NOW, AND ONLY NOW, create the permanent verified user record in the User collection!
+    const user = await User.create({
+      firstName: pending.firstName,
+      lastName: pending.lastName,
+      email: pending.email,
+      phone: pending.phone,
+      passwordHash: pending.passwordHash,
+      role: 'CUSTOMER',
+      isActive: true,
+      isEmailVerified: true
+    });
+
+    // Remove the pending registration record
+    await PendingUser.deleteMany({ email: pending.email });
 
     res.json({
       status: 'success',
@@ -138,28 +232,33 @@ exports.resendEmailOtp = async (req, res, next) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const user = await User.findOne({ email: normalizedEmail });
+    const pending = await PendingUser.findOne({ email: normalizedEmail });
 
-    if (!user) {
-      return res.status(404).json({ status: 'error', message: 'User not found with this email' });
-    }
-
-    if (user.isEmailVerified) {
-      return res.status(400).json({ status: 'error', message: 'Email is already verified' });
+    if (!pending) {
+      const verifiedUser = await User.findOne({ email: normalizedEmail });
+      if (verifiedUser && verifiedUser.isEmailVerified) {
+        return res.status(400).json({ status: 'error', message: 'Email is already verified. Please sign in.' });
+      }
+      return res.status(404).json({ status: 'error', message: 'No pending registration found for this email. Please register again.' });
     }
 
     const otp = crypto.randomInt(100000, 1000000).toString();
-    user.emailOtp = otp;
-    user.emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
-    await user.save();
+    pending.otp = otp;
+    pending.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await pending.save();
 
-    await emailService.sendOtpEmail(user.email, otp);
+    const emailDispatch = await emailService.sendOtpEmail(pending.email, otp);
+    if (!emailDispatch.delivered) {
+      return res.status(503).json({
+        status: 'error',
+        message: emailDispatch.error || 'Failed to dispatch verification email to your inbox.'
+      });
+    }
 
     res.json({
       status: 'success',
-      message: 'A new 6-digit verification code has been sent to your email.',
-      email: user.email,
-      ...(!emailService.isConfigured || process.env.NODE_ENV !== 'production' ? { previewOtp: otp } : {})
+      message: 'A new 6-digit verification code has been dispatched to your email address.',
+      email: pending.email
     });
   } catch (error) {
     next(error);
@@ -202,8 +301,7 @@ exports.login = async (req, res, next) => {
         code: 'EMAIL_NOT_VERIFIED',
         message: 'Your email address is not verified yet. A 6-digit verification OTP has been sent to your email.',
         requiresOtp: true,
-        email: user.email,
-        ...(!emailService.isConfigured || process.env.NODE_ENV !== 'production' ? { previewOtp: otp } : {})
+        email: user.email
       });
     }
 
@@ -292,7 +390,23 @@ exports.updateProfile = async (req, res, next) => {
 
     if (firstName) user.firstName = firstName.trim();
     if (lastName) user.lastName = lastName.trim();
-    if (phone) user.phone = phone.trim();
+    if (phone) {
+      const phoneValidation = validateMobileNumber(phone);
+      if (!phoneValidation.isValid) {
+        return res.status(400).json({ status: 'error', message: phoneValidation.message });
+      }
+      const existingPhoneUser = await User.findOne({
+        phone: phoneValidation.normalizedPhone,
+        _id: { $ne: user._id }
+      });
+      if (existingPhoneUser) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'This mobile number is already linked to another account'
+        });
+      }
+      user.phone = phoneValidation.normalizedPhone;
+    }
 
     await user.save();
     res.json({ status: 'success', message: 'Profile updated', data: user });

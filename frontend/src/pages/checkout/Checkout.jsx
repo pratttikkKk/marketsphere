@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom';
 import apiClient from '../../api/client';
 import { launchRazorpayModal } from '../../utils/razorpay';
 import UpiPaymentModal from '../../components/common/UpiPaymentModal';
+import { useNotification } from '../../context/NotificationContext';
 
 export default function Checkout() {
+  const { toast, modal } = useNotification();
   const [cart, setCart] = useState(null);
   const [loading, setLoading] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
@@ -45,7 +47,7 @@ export default function Checkout() {
       const valid = res.data?.find(c => c.code === couponCode.trim().toUpperCase());
       if (valid) {
         setAppliedCoupon(valid);
-        alert(`Coupon ${valid.code} applied! Discount will be computed by backend.`);
+        toast.success(`Coupon "${valid.code}" applied! Discount will be computed on order summary.`, 'Coupon Applied');
       } else {
         setCouponError('Invalid or expired coupon code');
       }
@@ -77,9 +79,18 @@ export default function Checkout() {
       // If online payment was chosen, present Seller UPI Scanner & Payment Modal
       if (paymentMethod !== 'COD') {
         setShowUpiModal(true);
+      } else {
+        modal.success({
+          title: 'Order Placed Successfully! 📦',
+          message: `Order #${order._id.slice(-6).toUpperCase()} has been confirmed via Cash on Delivery. Total: ₹${order.totalAmount}.`,
+          confirmText: 'View Bill & Delivery Steps'
+        });
       }
     } catch (err) {
-      alert(err.response?.data?.message || err.response?.data?.error?.message || err.message || 'Checkout failed');
+      modal.error({
+        title: 'Checkout Failed',
+        message: err.response?.data?.message || err.response?.data?.error?.message || err.message || 'Checkout could not be completed.'
+      });
     } finally {
       setPlacingOrder(false);
     }

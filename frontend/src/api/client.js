@@ -1,21 +1,37 @@
 import axios from 'axios';
 
 // Smart base URL resolution:
-// If running on a deployed web domain (e.g. Vercel), safely default to the live Render backend
-// If running locally, default to http://localhost:5002/api/v1
+// 1. If VITE_API_URL environment variable is provided, use it directly (e.g. Vercel deployment)
+// 2. If running through Vite dev proxy (port 5173 / 5174), use relative '/api/v1'
+// 3. If running on same domain in production (e.g. Render / Railway full-stack), use relative '/api/v1'
+// 4. If accessing via local network IP (e.g. mobile testing), route to the network backend
+// 5. Default fallback to localhost:5002
 const resolveBaseUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL;
-  const isBrowser = typeof window !== 'undefined';
-  const isLocalhost = isBrowser && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-  if (isBrowser && !isLocalhost) {
-    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-      return envUrl;
-    }
-    return 'https://marketsphere-api.onrender.com/api/v1';
+  if (envUrl && envUrl.trim()) {
+    return envUrl.trim().replace(/\/$/, '');
   }
 
-  return envUrl || 'http://localhost:5002/api/v1';
+  if (typeof window !== 'undefined') {
+    const { hostname, port } = window.location;
+
+    // A) If accessing via Vite dev server with proxy active, use relative API path
+    if (port === '5173' || port === '5174') {
+      return '/api/v1';
+    }
+
+    // B) If hosted together on standard HTTP/HTTPS ports (single live link deployment)
+    if (!port || port === '80' || port === '443' || port === '5002') {
+      return '/api/v1';
+    }
+
+    // C) If accessing over LAN IP directly from mobile/tablet
+    if (/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname)) {
+      return `http://${hostname}:5002/api/v1`;
+    }
+  }
+
+  return 'http://localhost:5002/api/v1';
 };
 
 const apiClient = axios.create({

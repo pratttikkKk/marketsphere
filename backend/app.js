@@ -16,27 +16,30 @@ app.use(helmet({
   contentSecurityPolicy: false // Allows loading assets in development
 }));
 
-// Environment-Driven CORS with Production Cloud Support
+// Environment-Driven CORS with Production Cloud & Local Network Support
 const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:5174',
   'http://127.0.0.1:5174',
-  ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL.trim()] : [])
+  ...(process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',').map(s => s.trim().replace(/\/$/, '')) : [])
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow non-browser requests (e.g. mobile apps, curl, webhooks)
+    // Allow non-browser requests (e.g. mobile apps, curl, webhooks, server-to-server)
     if (!origin) {
       return callback(null, true);
     }
     const cleanOrigin = origin.replace(/\/$/, '');
-    const isExplicitlyAllowed = allowedOrigins.some(o => o.replace(/\/$/, '') === cleanOrigin);
+    const isExplicitlyAllowed = allowedOrigins.includes(cleanOrigin);
     const isVercel = cleanOrigin.endsWith('.vercel.app');
     const isRender = cleanOrigin.endsWith('.onrender.com');
+    const isNetlify = cleanOrigin.endsWith('.netlify.app');
+    const isRailway = cleanOrigin.endsWith('.railway.app');
+    const isLocalNetwork = /^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(cleanOrigin);
 
-    if (isExplicitlyAllowed || isVercel || isRender) {
+    if (isExplicitlyAllowed || isVercel || isRender || isNetlify || isRailway || isLocalNetwork || process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
     console.warn(`[CORS] Rejected request from unauthorized origin: ${origin}`);
@@ -93,18 +96,30 @@ app.use('/api/v1/auth/register', authLimiter);
 app.use('/api/v1/orders/checkout', checkoutLimiter);
 app.use('/api/', generalLimiter);
 
-// Root & Health Probes (Supports Render health check & browser verification)
-app.get(['/', '/health'], (req, res) => {
+// Primary API Router Mount
+app.use('/api/v1', routes);
+
+// Production Static Frontend Serving (Enables single-URL full-stack deployment)
+const fs = require('fs');
+const frontendDist = path.join(__dirname, '../frontend/dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
+
+// Root & Health Probes (Supports Render/Railway health checks & browser verification)
+app.get(['/health', '/api/v1/health'], (req, res) => {
   res.status(200).json({ 
     status: 'UP', 
     service: 'MarketSphere Marketplace Backend API',
     database: mongoose.connection.readyState === 1 ? 'CONNECTED' : 'DISCONNECTED',
     timestamp: new Date() 
   });
-});
-
-app.get('/api/v1/health', (req, res) => {
-  res.status(200).json({ status: 'UP', service: 'MarketSphere Backend API', timestamp: new Date() });
 });
 
 app.get('/api/v1/ready', (req, res) => {
@@ -122,9 +137,6 @@ app.get('/api/v1/ready', (req, res) => {
     timestamp: new Date() 
   });
 });
-
-// Primary API Router Mount
-app.use('/api/v1', routes);
 
 // Error Handling Pipeline
 app.use(notFoundHandler);

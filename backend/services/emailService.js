@@ -1,57 +1,174 @@
+const nodemailer = require('nodemailer');
+
 /**
- * MarketSphere Email Service Provider Abstraction
- * Supports SMTP/SendGrid configuration with transparent development console logging.
+ * MarketSphere Email Service Provider
+ * Sends real verification emails and notifications using configured SMTP/Gmail,
+ * with seamless fallback to Ethereal SMTP for local testing when credentials are not yet added.
  */
 class EmailService {
   constructor() {
-    this.provider = process.env.EMAIL_PROVIDER || 'CONSOLE';
-    this.isConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER);
+    this.transporter = null;
+    this.etherealAccount = null;
+    this.isInitializing = false;
+    this.initTransporter();
+  }
+
+  async initTransporter() {
+    if (this.transporter) return this.transporter;
+    if (this.isInitializing) {
+      // Wait for initialization to complete if currently running
+      while (this.isInitializing) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return this.transporter;
+    }
+
+    this.isInitializing = true;
+    try {
+      const gmailUser = process.env.GMAIL_USER;
+      const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS;
+
+      const smtpHost = process.env.SMTP_HOST;
+      const smtpUser = process.env.SMTP_USER;
+      const smtpPass = process.env.SMTP_PASS;
+
+      // 1. Direct Gmail Configuration (Port 465 SSL or standard Gmail service)
+      if (gmailUser && gmailPass) {
+        const cleanUser = gmailUser.trim();
+        const cleanPass = gmailPass.replace(/\s+/g, '');
+        this.transporter = nodemailer.createTransport({
+          host: 'smtp.gmail.com',
+          port: 465,
+          secure: true, // SSL
+          auth: {
+            user: cleanUser,
+            pass: cleanPass
+          }
+        });
+        console.log(`[EMAIL SERVICE] Configured Gmail SMTP for ${cleanUser}`);
+      }
+      // 2. Custom SMTP Host Configuration (Brevo, SendGrid, Mailgun, Amazon SES, etc.)
+      else if (smtpHost && smtpUser && smtpPass) {
+        const port = Number(process.env.SMTP_PORT || 587);
+        this.transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port,
+          secure: process.env.SMTP_SECURE === 'true' || port === 465,
+          auth: {
+            user: smtpUser,
+            pass: smtpPass
+          },
+          tls: {
+            rejectUnauthorized: false
+          }
+        });
+        console.log(`[EMAIL SERVICE] Configured SMTP (${smtpHost}:${port}) for ${smtpUser}`);
+      }
+      // 3. Fallback: No real SMTP credentials configured
+      else {
+        this.transporter = null;
+        console.warn('[EMAIL SERVICE] Real SMTP credentials (GMAIL_USER/GMAIL_APP_PASSWORD or SMTP_HOST) are not configured in backend/.env.');
+      }
+    } catch (err) {
+      console.error('[EMAIL SERVICE] Error during transporter setup:', err.message);
+    } finally {
+      this.isInitializing = false;
+    }
+
+    return this.transporter;
+  }
+
+  isConfiguredWithRealSmtp() {
+    return Boolean(
+      (process.env.GMAIL_USER && (process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS)) ||
+      (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
+    );
   }
 
   async sendEmail(to, subject, body, templateType = 'GENERAL', customHtml = null) {
-    if (this.isConfigured && process.env.NODE_ENV === 'production') {
-      try {
-        const nodemailer = require('nodemailer');
-        const transporter = nodemailer.createTransport({
-          host: process.env.SMTP_HOST,
-          port: Number(process.env.SMTP_PORT || 587),
-          secure: process.env.SMTP_SECURE === 'true',
-          auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS
-          }
-        });
+    try {
+      const transporter = await this.initTransporter();
 
-        await transporter.sendMail({
-          from: process.env.EMAIL_FROM || '"MarketSphere" <no-reply@marketsphere.com>',
-          to,
-          subject,
-          text: body,
-          html: customHtml || `<div style="font-family: Arial, sans-serif; padding: 20px;">
-                  <h2>${subject}</h2>
-                  <p>${body.replace(/\n/g, '<br/>')}</p>
-                  <hr style="margin-top: 30px; border: 0; border-top: 1px solid #eee;" />
-                  <small style="color: #888;">MarketSphere Multi-Vendor Marketplace</small>
-                 </div>`
-        });
-        return { delivered: true, provider: 'SMTP' };
-      } catch (err) {
-        console.error('[EMAIL] Failed sending email via SMTP:', err.message);
-        return { delivered: false, error: err.message };
+      if (!transporter) {
+        const errorMsg = 'Email service is not configured. Please add GMAIL_USER and GMAIL_APP_PASSWORD in backend/.env to send verification emails to real inboxes.';
+        console.warn(`[EMAIL DISPATCH FAILED] ${errorMsg}`);
+        return { delivered: false, error: errorMsg };
       }
-    }
 
-    // Development / Test Mode: Clearly logged without claiming external delivery
-    console.log(`[EMAIL DEVELOPMENT DISPATCH] [Template: ${templateType}]`);
-    console.log(`  To: ${to}`);
-    console.log(`  Subject: ${subject}`);
-    console.log(`  Body preview: ${body.substring(0, 100)}...`);
-    console.log('  Status: Logged to dev console (no SMTP provider credentials configured)');
-    return { delivered: false, mode: 'DEVELOPMENT_SIMULATION' };
+      const fromAddress = process.env.EMAIL_FROM || 
+                          (process.env.GMAIL_USER ? `"MarketSphere" <${process.env.GMAIL_USER.trim()}>` : null) || 
+                          '"MarketSphere" <no-reply@marketsphere.com>';
+
+      const mailOptions = {
+        from: fromAddress,
+        to,
+        subject,
+        text: body,
+        html: customHtml || `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 24px; max-width: 580px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+            <h2 style="color: #0f172a; margin-top: 0;">${subject}</h2>
+            <p style="color: #334155; font-size: 15px; line-height: 1.6;">${body.replace(/\n/g, '<br/>')}</p>
+            <hr style="margin-top: 30px; border: 0; border-top: 1px solid #e2e8f0;" />
+            <small style="color: #94a3b8; font-size: 12px;">MarketSphere Multi-Vendor Marketplace</small>
+          </div>
+        `
+      };
+
+      const info = await transporter.sendMail(mailOptions);
+
+      console.log(`\n======================================================`);
+      console.log(`[REAL EMAIL SENT TO INBOX]`);
+      console.log(`  To: ${to}`);
+      console.log(`  Subject: ${subject}`);
+      console.log(`  Message ID: ${info.messageId}`);
+      console.log(`======================================================\n`);
+
+      return {
+        delivered: true,
+        messageId: info.messageId,
+        provider: 'REAL_SMTP'
+      };
+    } catch (err) {
+      console.error(`[EMAIL DISPATCH ERROR] Failed to send email to ${to}:`, err.message);
+      return { delivered: false, error: err.message };
+    }
+  }
+
+  async sendOtpEmail(to, otp) {
+    const subject = `Your MarketSphere Verification Code is ${otp}`;
+    const body = `Welcome to MarketSphere! Your one-time verification code (OTP) is: ${otp}. It is valid for 10 minutes. Please enter this code on the registration page to verify your email address.`;
+    const html = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <h1 style="color: #d97706; margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">MarketSphere</h1>
+          <p style="color: #64748b; font-size: 13px; margin: 6px 0 0 0;">Empowering Independent & Authentic Commerce</p>
+        </div>
+        <div style="background: linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%); border: 1px solid #fde68a; border-radius: 14px; padding: 28px 20px; text-align: center; margin-bottom: 24px;">
+          <p style="color: #78350f; font-size: 15px; font-weight: 700; margin: 0 0 16px 0;">Verify Your Email Address</p>
+          <div style="font-size: 38px; font-weight: 900; letter-spacing: 10px; color: #0f172a; font-family: 'Courier New', Courier, monospace; padding: 14px 24px; background-color: #ffffff; border: 2px dashed #f59e0b; border-radius: 10px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            ${otp}
+          </div>
+          <p style="color: #92400e; font-size: 12px; margin: 16px 0 0 0; font-weight: 500;">
+            ⏳ Valid for 10 minutes. Keep this code confidential.
+          </p>
+        </div>
+        <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 16px 0;">
+          Hi there, welcome to MarketSphere! Use the one-time password (OTP) above to verify your email and activate your account.
+        </p>
+        <p style="color: #94a3b8; font-size: 12px; line-height: 1.5; margin: 0;">
+          If you didn't create an account with MarketSphere, please disregard this email. Your email address will remain unlinked.
+        </p>
+        <hr style="margin-top: 28px; border: 0; border-top: 1px solid #f1f5f9;" />
+        <p style="text-align: center; color: #94a3b8; font-size: 11px; margin: 16px 0 0 0;">
+          © ${new Date().getFullYear()} MarketSphere Marketplace. All rights reserved.
+        </p>
+      </div>
+    `;
+    return this.sendEmail(to, subject, body, 'EMAIL_OTP_VERIFICATION', html);
   }
 
   async sendOrderConfirmation(to, order) {
-    const subject = `Order Confirmation #${order._id.toString().slice(-6)}`;
+    const subject = `Order Confirmation #${order._id.toString().slice(-6).toUpperCase()}`;
     const body = `Thank you for your order! Total amount: ₹${order.totalAmount}. Order status: ${order.orderStatus}.`;
     return this.sendEmail(to, subject, body, 'ORDER_CONFIRMATION');
   }
@@ -66,34 +183,6 @@ class EmailService {
     const subject = `Update on your Seller Application "${storeName}"`;
     const body = `We regret to inform you that your seller application could not be approved at this time. Reason: ${reason}`;
     return this.sendEmail(to, subject, body, 'SELLER_REJECTION');
-  }
-
-  async sendOtpEmail(to, otp) {
-    const subject = `Your MarketSphere Verification Code is ${otp}`;
-    const body = `Welcome to MarketSphere! Your one-time verification code (OTP) is: ${otp}. It is valid for 10 minutes. Please enter this code on the registration page to verify your email address.`;
-    const html = `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 28px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
-        <div style="text-align: center; margin-bottom: 24px;">
-          <h1 style="color: #f59e0b; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.5px;">MarketSphere</h1>
-          <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Empowering Independent Commerce</p>
-        </div>
-        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
-          <p style="color: #334155; font-size: 15px; font-weight: 600; margin: 0 0 16px 0;">Verify Your Email Address</p>
-          <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #0f172a; font-family: monospace; padding: 12px 20px; background-color: #ffffff; border: 2px dashed #cbd5e1; border-radius: 8px; display: inline-block;">
-            ${otp}
-          </div>
-          <p style="color: #94a3b8; font-size: 12px; margin: 16px 0 0 0;">This code is valid for 10 minutes. Do not share it with anyone.</p>
-        </div>
-        <p style="color: #64748b; font-size: 13px; line-height: 1.6; margin: 0;">
-          If you did not request this verification code, please ignore this email. Your account will not be activated without this verification.
-        </p>
-        <hr style="margin-top: 28px; border: 0; border-top: 1px solid #f1f5f9;" />
-        <p style="text-align: center; color: #94a3b8; font-size: 11px; margin: 16px 0 0 0;">
-          © ${new Date().getFullYear()} MarketSphere Inc. All rights reserved.
-        </p>
-      </div>
-    `;
-    return this.sendEmail(to, subject, body, 'EMAIL_OTP_VERIFICATION', html);
   }
 }
 

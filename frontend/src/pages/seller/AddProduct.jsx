@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../api/client';
+import { useNotification } from '../../context/NotificationContext';
 
 export default function AddProduct() {
+  const { modal, toast } = useNotification();
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -83,8 +85,12 @@ export default function AddProduct() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       if (res.status === 'success' || res.data?.status === 'success') {
-        alert('Product created successfully with your UPI QR settings!');
-        navigate('/seller');
+        modal.success({
+          title: 'Product Created! 🎉',
+          message: `"${formData.name}" was successfully listed with your custom pricing & UPI payment configuration.`,
+          confirmText: 'Go to Seller Dashboard',
+          onConfirm: () => navigate('/seller')
+        });
       }
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Failed to create product');

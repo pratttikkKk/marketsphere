@@ -22,6 +22,8 @@ async function bootstrapAdmin() {
       admin.role = 'ADMIN';
       admin.passwordHash = passwordHash;
       admin.isActive = true;
+      admin.isEmailVerified = true;
+      if (!admin.phone) admin.phone = process.env.ADMIN_PHONE || '+919999999990';
       await admin.save();
       console.log(`[BOOTSTRAP] Existing user promoted to ADMIN: ${adminEmail}`);
     } else {
@@ -30,8 +32,10 @@ async function bootstrapAdmin() {
         lastName,
         email: adminEmail.toLowerCase(),
         passwordHash,
+        phone: process.env.ADMIN_PHONE || '+919999999990',
         role: 'ADMIN',
-        isActive: true
+        isActive: true,
+        isEmailVerified: true
       });
       console.log(`[BOOTSTRAP] New ADMIN account created successfully: ${adminEmail}`);
     }

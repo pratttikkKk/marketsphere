@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import apiClient from '../../api/client';
 import { launchRazorpayModal } from '../../utils/razorpay';
+import { useNotification } from '../../context/NotificationContext';
 
 export default function UpiPaymentModal({
   isOpen,
@@ -9,6 +10,7 @@ export default function UpiPaymentModal({
   paymentData,
   onPaymentSuccess
 }) {
+  const { modal } = useNotification();
   const [utrNumber, setUtrNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [payingRazorpay, setPayingRazorpay] = useState(false);
@@ -44,7 +46,11 @@ export default function UpiPaymentModal({
         utrNumber: utrNumber.trim(),
         amountPaid: amount
       });
-      alert(`UPI Payment submitted successfully with UTR #${utrNumber}! The seller will verify receipt of ₹${amount} in their account and confirm your order.`);
+      modal.success({
+        title: 'UPI Payment Submitted! 📱',
+        message: `UPI Payment reference UTR #${utrNumber} submitted successfully! The seller will verify receipt of ₹${amount} in their account and confirm order #${order._id.slice(-6).toUpperCase()}.`,
+        confirmText: 'View Order Status'
+      });
       onPaymentSuccess(res.data?.data || res.data);
       onClose();
     } catch (err) {
@@ -79,7 +85,11 @@ export default function UpiPaymentModal({
         providerSignature: rzpRes.razorpay_signature
       });
 
-      alert('Payment cryptographically verified and confirmed via Razorpay!');
+      modal.success({
+        title: 'Payment Confirmed! 💳',
+        message: 'Your payment has been cryptographically verified and confirmed via Razorpay.',
+        confirmText: 'View Receipt'
+      });
       onPaymentSuccess(confirmRes.data?.data || confirmRes.data);
       onClose();
     } catch (err) {

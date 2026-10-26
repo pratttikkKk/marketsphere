@@ -3,8 +3,10 @@ import apiClient from '../../api/client';
 import { Link } from 'react-router-dom';
 import { launchRazorpayModal } from '../../utils/razorpay';
 import UpiPaymentModal from '../../components/common/UpiPaymentModal';
+import { useNotification } from '../../context/NotificationContext';
 
 export default function CustomerDashboard() {
+  const { toast, modal } = useNotification();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [payingOrderId, setPayingOrderId] = useState(null);
@@ -55,16 +57,16 @@ export default function CustomerDashboard() {
       });
 
       const updatedOrder = confirmRes.data || confirmRes;
-      alert('Payment verified and confirmed via Razorpay!');
+      toast.success('Payment verified and confirmed via Razorpay!', 'Payment Verified');
       setOrders(prev => prev.map(o => o._id === orderId ? updatedOrder : o));
       if (selectedBillOrder && selectedBillOrder._id === orderId) {
         setSelectedBillOrder(updatedOrder);
       }
     } catch (err) {
       if (err.message === 'PAYMENT_DISMISSED') {
-        alert('Payment window dismissed. Order remains Pending Payment.');
+        toast.info('Payment window was dismissed. Order remains Pending Payment.', 'Payment Dismissed');
       } else {
-        alert(err.response?.data?.message || err.message || 'Payment processing failed');
+        toast.error(err.response?.data?.message || err.message || 'Payment processing failed', 'Payment Error');
       }
     } finally {
       setPayingOrderId(null);
@@ -89,10 +91,14 @@ export default function CustomerDashboard() {
         reason: reason || 'Customer requested cancellation',
         customerRefundUpi: customerRefundUpi || undefined
       });
-      alert('Order successfully cancelled. Refund has been initiated/queued.');
+      modal.success({
+        title: 'Order Cancelled',
+        message: 'Your order was successfully cancelled. Refund has been initiated/queued.',
+        confirmText: 'Done'
+      });
       setOrders(prev => prev.map(o => o._id === orderId ? (res.data?.data || res.data) : o));
     } catch (err) {
-      alert(err.response?.data?.message || err.message || 'Cancellation failed');
+      toast.error(err.response?.data?.message || err.message || 'Cancellation failed', 'Cancel Error');
     }
   };
 
@@ -114,10 +120,14 @@ export default function CustomerDashboard() {
         reason: reason || 'Customer requested return',
         customerRefundUpi: customerRefundUpi || undefined
       });
-      alert('Return request submitted successfully. Awaiting seller/admin confirmation.');
+      modal.success({
+        title: 'Return Request Submitted',
+        message: 'Your return request was submitted successfully. The seller/admin will review and confirm.',
+        confirmText: 'Understood'
+      });
       setOrders(prev => prev.map(o => o._id === orderId ? (res.data?.data || res.data) : o));
     } catch (err) {
-      alert(err.response?.data?.message || err.message || 'Return request failed');
+      toast.error(err.response?.data?.message || err.message || 'Return request failed', 'Return Error');
     }
   };
 

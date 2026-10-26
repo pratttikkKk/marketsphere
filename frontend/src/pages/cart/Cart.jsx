@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../../api/client';
+import { useNotification } from '../../context/NotificationContext';
 
 export default function Cart() {
   const [cart, setCart] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { toast } = useNotification();
 
   useEffect(() => {
     apiClient.get('/cart')
@@ -17,14 +19,20 @@ export default function Cart() {
     try {
       const res = await apiClient.delete(`/cart/items/${productId}`);
       setCart(res.data);
-    } catch(err) { alert(err.message); }
+      toast.success('Item removed from cart', 'Cart Updated');
+    } catch(err) { 
+      toast.error(err.response?.data?.message || err.message, 'Cart Error'); 
+    }
   };
 
   const handleUpdateQuantity = async (productId, quantity) => {
     try {
       const res = await apiClient.put(`/cart/items/${productId}`, { quantity });
       setCart(res.data);
-    } catch(err) { alert(err.message); }
+      toast.success('Quantity updated', 'Cart Updated');
+    } catch(err) { 
+      toast.error(err.response?.data?.message || err.message, 'Cart Error'); 
+    }
   };
 
   if (loading) return <div className="p-8 text-center">Loading cart...</div>;

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import apiClient from '../../api/client';
+import { useNotification } from '../../context/NotificationContext';
 
 export default function ProductDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { toast, modal } = useNotification();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
@@ -23,16 +24,20 @@ export default function ProductDetails() {
 
   const handleAddToCart = async () => {
     if (!localStorage.getItem('token')) {
-      alert('Please login to add to cart');
-      navigate('/login');
+      modal.warning({
+        title: 'Sign In Required',
+        message: 'Please log in to your account to add items to your shopping cart.',
+        confirmText: 'Sign In',
+        onConfirm: () => navigate('/login')
+      });
       return;
     }
     setAddingToCart(true);
     try {
       await apiClient.post('/cart/items', { productId: product._id, quantity });
-      alert('Added to cart successfully!');
+      toast.success(`Added ${quantity} × "${product.name}" to your cart!`, 'Cart Updated');
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to add to cart');
+      toast.error(err.response?.data?.message || 'Failed to add item to cart', 'Cart Error');
     } finally {
       setAddingToCart(false);
     }

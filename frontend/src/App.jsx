@@ -15,12 +15,14 @@ import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import RoleRoute from './components/common/RoleRoute';
+import { NotificationProvider } from './context/NotificationContext';
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path='/' element={<MainLayout />}>
+    <NotificationProvider>
+      <Router>
+        <Routes>
+          <Route path='/' element={<MainLayout />}>
           <Route index element={<Home />} />
           <Route path='login' element={<Login />} />
           <Route path='register' element={<Register />} />
@@ -78,7 +80,8 @@ function App() {
         </Route>
       </Routes>
     </Router>
-  );
+  </NotificationProvider>
+);
 }
 
 export default App;

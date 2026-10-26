@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import apiClient from '../../api/client';
 import SellerOnboarding from './SellerOnboarding';
+import { useNotification } from '../../context/NotificationContext';
 
 const formatCurrency = (value = 0) => `$${Number(value).toLocaleString()}`;
 
 const SellerDashboard = () => {
+  const { toast, modal } = useNotification();
   const [sellerId, setSellerId] = useState('');
   const [dashboard, setDashboard] = useState(null);
   const [orders, setOrders] = useState([]);
@@ -50,9 +52,9 @@ const SellerDashboard = () => {
     try {
       await apiClient.patch(`/sellers/orders/${orderId}/status`, { status });
       setOrders(prev => prev.map(o => o._id === orderId ? { ...o, orderStatus: status } : o));
-      alert(`Order #${orderId.slice(-6).toUpperCase()} marked as ${status}!`);
+      toast.success(`Order #${orderId.slice(-6).toUpperCase()} updated to ${status}!`, 'Status Updated');
     } catch (err) {
-      alert(err.response?.data?.message || err.message || 'Status update failed');
+      toast.error(err.response?.data?.message || err.message || 'Status update failed', 'Update Error');
     }
   };
 
@@ -76,7 +78,11 @@ const SellerDashboard = () => {
       });
 
       const updated = res.data?.data || res.data;
-      alert(`Payment of ₹${receivedAmountInput} verified! Order marked as PAID.`);
+      modal.success({
+        title: 'Payment Verified! ✅',
+        message: `Payment of ₹${receivedAmountInput} for Order #${verifyingOrder._id.slice(-6).toUpperCase()} verified and marked as PAID.`,
+        confirmText: 'Done'
+      });
       setOrders(prev => prev.map(o => o._id === verifyingOrder._id ? { ...o, paymentStatus: 'PAID', paymentDetails: updated.paymentDetails || o.paymentDetails } : o));
       setVerifyingOrder(null);
       loadDashboard();
@@ -91,11 +97,11 @@ const SellerDashboard = () => {
     if (!window.confirm('Confirm that cash payment has been received upon delivery?')) return;
     try {
       await apiClient.patch(`/sellers/orders/${orderId}/mark-paid`);
-      alert(`COD Payment collected! Order marked as PAID.`);
+      toast.success(`COD Payment collected! Order #${orderId.slice(-6).toUpperCase()} marked as PAID.`, 'COD Paid');
       setOrders(prev => prev.map(o => o._id === orderId ? { ...o, paymentStatus: 'PAID' } : o));
       loadDashboard();
     } catch (err) {
-      alert(err.response?.data?.message || err.message || 'Failed to mark COD as paid');
+      toast.error(err.response?.data?.message || err.message || 'Failed to mark COD as paid', 'Payment Error');
     }
   };
 
@@ -125,7 +131,11 @@ const SellerDashboard = () => {
       });
 
       const updated = res.data?.data || res.data;
-      alert(`Refund of ₹${refundAmountInput || refundingOrder.totalAmount} recorded! Order marked as REFUNDED.`);
+      modal.success({
+        title: 'Refund Recorded 💸',
+        message: `Refund of ₹${refundAmountInput || refundingOrder.totalAmount} for Order #${refundingOrder._id.slice(-6).toUpperCase()} recorded! Order marked as REFUNDED.`,
+        confirmText: 'Done'
+      });
       setOrders(prev => prev.map(o => o._id === refundingOrder._id ? { ...o, paymentStatus: 'REFUNDED', paymentDetails: updated.paymentDetails || o.paymentDetails } : o));
       setRefundingOrder(null);
       loadDashboard();

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import apiClient from '../../api/client';
+import { useNotification } from '../../context/NotificationContext';
 
 const formatCurrency = (value = 0) => `₹${Number(value).toLocaleString()}`;
 
 const AdminDashboard = () => {
+  const { toast, modal } = useNotification();
   const [metrics, setMetrics] = useState(null);
   const [sellers, setSellers] = useState([]);
   const [moderation, setModeration] = useState([]);
@@ -41,9 +43,9 @@ const AdminDashboard = () => {
     try {
       await apiClient.patch(`/admin/products/${productId}/moderate`, { status: 'PUBLISHED' });
       setModeration(prev => prev.filter(p => p._id !== productId));
-      alert('Product approved and PUBLISHED to marketplace catalog!');
+      toast.success('Product approved and PUBLISHED to marketplace catalog!', 'Product Approved');
     } catch (err) {
-      alert(err.response?.data?.message || err.message);
+      toast.error(err.response?.data?.message || err.message, 'Moderation Error');
     }
   };
 
@@ -52,9 +54,9 @@ const AdminDashboard = () => {
     try {
       await apiClient.patch(`/admin/products/${productId}/moderate`, { status: 'REJECTED', reason });
       setModeration(prev => prev.filter(p => p._id !== productId));
-      alert('Product rejected.');
+      toast.info('Product rejected.', 'Moderation Updated');
     } catch (err) {
-      alert(err.response?.data?.message || err.message);
+      toast.error(err.response?.data?.message || err.message, 'Moderation Error');
     }
   };
 
@@ -66,9 +68,9 @@ const AdminDashboard = () => {
     try {
       await apiClient.patch(`/admin/sellers/${sellerId}/status`, { status, reason });
       setSellers(prev => prev.filter(s => s._id !== sellerId));
-      alert(`Seller application marked as ${status}!`);
+      toast.success(`Seller application marked as ${status}!`, 'Seller Status Updated');
     } catch (err) {
-      alert(err.response?.data?.message || err.message);
+      toast.error(err.response?.data?.message || err.message, 'Seller Status Error');
     }
   };
 
@@ -76,8 +78,9 @@ const AdminDashboard = () => {
     try {
       await apiClient.patch(`/admin/users/${userId}/status`, { isActive: !currentStatus });
       setUsers(prev => prev.map(u => u._id === userId ? { ...u, isActive: !currentStatus } : u));
+      toast.success(`User ${!currentStatus ? 'activated' : 'deactivated'} successfully!`, 'User Status');
     } catch (err) {
-      alert(err.response?.data?.message || err.message);
+      toast.error(err.response?.data?.message || err.message, 'User Status Error');
     }
   };
 
@@ -85,9 +88,9 @@ const AdminDashboard = () => {
     try {
       await apiClient.patch(`/admin/orders/${orderId}/returns`, { decision });
       setOrders(prev => prev.map(o => o._id === orderId ? { ...o, orderStatus: decision === 'APPROVE' ? 'RETURNED' : 'DELIVERED' } : o));
-      alert(`Return ${decision.toLowerCase()}ed!`);
+      toast.success(`Return ${decision.toLowerCase()}ed!`, 'Return Decision');
     } catch (err) {
-      alert(err.response?.data?.message || err.message);
+      toast.error(err.response?.data?.message || err.message, 'Return Error');
     }
   };
 
