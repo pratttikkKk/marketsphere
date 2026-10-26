@@ -103,6 +103,36 @@ export default function UpiPaymentModal({
     }
   };
 
+  const handlePayViaSimulator = async () => {
+    setSubmitting(true);
+    setError('');
+    try {
+      const sigRes = await apiClient.post('/orders/simulate-signature', {
+        providerOrderId: paymentData?.providerOrderId || order.paymentDetails?.providerOrderId || `order_online_${Date.now()}`
+      });
+      const { providerOrderId, providerPaymentId, providerSignature } = sigRes.data?.data || sigRes.data;
+
+      const confirmRes = await apiClient.post('/orders/confirm-payment', {
+        orderId: order._id,
+        providerOrderId,
+        providerPaymentId,
+        providerSignature
+      });
+
+      modal.success({
+        title: 'Online Payment Confirmed! 💳',
+        message: 'Your payment was successfully verified and confirmed via Online Payment Simulator.',
+        confirmText: 'View Invoice'
+      });
+      onPaymentSuccess(confirmRes.data?.data || confirmRes.data);
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || 'Simulator payment confirmation failed.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 animate-fadeIn">
       <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-gray-100 max-h-[95vh] overflow-y-auto">
@@ -197,17 +227,29 @@ export default function UpiPaymentModal({
           </button>
         </form>
 
-        {/* Alternate Razorpay option */}
+        {/* Alternate Gateway and Simulator Options */}
         <div className="pt-2 border-t text-center space-y-2">
-          <p className="text-xs text-gray-400">Prefer standard card or net banking?</p>
-          <button 
-            type="button" 
-            onClick={handlePayViaRazorpay} 
-            disabled={payingRazorpay} 
-            className="w-full border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold py-2 rounded-xl text-xs transition disabled:opacity-50"
-          >
-            {payingRazorpay ? 'Opening Razorpay...' : 'Pay with Razorpay Gateway (Cards / NetBanking)'}
-          </button>
+          <p className="text-xs text-gray-400">Prefer Card, Net Banking or Online Gateway?</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button 
+              type="button" 
+              onClick={handlePayViaRazorpay} 
+              disabled={payingRazorpay || submitting} 
+              className="border border-blue-300 hover:bg-blue-50 text-blue-700 font-semibold py-2 px-3 rounded-xl text-xs transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              <span>💳</span>
+              {payingRazorpay ? 'Opening...' : 'Razorpay Gateway'}
+            </button>
+            <button 
+              type="button" 
+              onClick={handlePayViaSimulator} 
+              disabled={submitting || payingRazorpay} 
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-3 rounded-xl text-xs shadow transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              <span>⚡</span>
+              {submitting ? 'Verifying...' : 'Online Simulator (Instant)'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

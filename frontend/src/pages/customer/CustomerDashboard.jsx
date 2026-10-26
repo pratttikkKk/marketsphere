@@ -73,61 +73,73 @@ export default function CustomerDashboard() {
     }
   };
 
-  const handleCancelOrder = async (orderId) => {
-    const targetOrder = orders.find(o => o._id === orderId);
-    const reason = prompt('Please enter cancellation reason:', 'Changed mind');
-    if (reason === null) return;
+  const [actionModal, setActionModal] = useState({
+    isOpen: false,
+    type: 'cancel',
+    order: null,
+    reason: '',
+    customerRefundUpi: '',
+    loading: false,
+    error: ''
+  });
 
-    let customerRefundUpi = '';
-    if (targetOrder && (targetOrder.paymentStatus === 'PAID' || targetOrder.paymentStatus === 'PENDING_SELLER_CONFIRMATION')) {
-      customerRefundUpi = prompt(
-        'Please enter your UPI ID for direct refund transfer (e.g. yourname@okhdfcbank, mobile@upi):',
-        targetOrder.paymentDetails?.customerRefundUpi || targetOrder.paymentDetails?.senderUpiId || (user.phone ? `${user.phone}@upi` : '')
-      );
-    }
-
-    try {
-      const res = await apiClient.post(`/orders/${orderId}/cancel`, { 
-        reason: reason || 'Customer requested cancellation',
-        customerRefundUpi: customerRefundUpi || undefined
-      });
-      modal.success({
-        title: 'Order Cancelled',
-        message: 'Your order was successfully cancelled. Refund has been initiated/queued.',
-        confirmText: 'Done'
-      });
-      setOrders(prev => prev.map(o => o._id === orderId ? (res.data?.data || res.data) : o));
-    } catch (err) {
-      toast.error(err.response?.data?.message || err.message || 'Cancellation failed', 'Cancel Error');
-    }
+  const openCancelModal = (order) => {
+    setActionModal({
+      isOpen: true,
+      type: 'cancel',
+      order,
+      reason: 'Changed mind',
+      customerRefundUpi: order.customerRefundUpi || order.paymentDetails?.customerRefundUpi || order.paymentDetails?.senderUpiId || (user.phone ? `${user.phone}@upi` : ''),
+      loading: false,
+      error: ''
+    });
   };
 
-  const handleRequestReturn = async (orderId) => {
-    const targetOrder = orders.find(o => o._id === orderId);
-    const reason = prompt('Please describe why you are returning this order:', 'Product defective or damaged');
-    if (reason === null) return;
+  const openReturnModal = (order) => {
+    setActionModal({
+      isOpen: true,
+      type: 'return',
+      order,
+      reason: 'Product defective or damaged',
+      customerRefundUpi: order.customerRefundUpi || order.paymentDetails?.customerRefundUpi || order.paymentDetails?.senderUpiId || (user.phone ? `${user.phone}@upi` : ''),
+      loading: false,
+      error: ''
+    });
+  };
 
-    let customerRefundUpi = '';
-    if (targetOrder && targetOrder.paymentStatus === 'PAID') {
-      customerRefundUpi = prompt(
-        'Please enter your UPI ID for refund payout upon return inspection:',
-        targetOrder.paymentDetails?.customerRefundUpi || targetOrder.paymentDetails?.senderUpiId || (user.phone ? `${user.phone}@upi` : '')
-      );
+  const handleSubmitAction = async (e) => {
+    e.preventDefault();
+    if (!actionModal.order) return;
+    const { order, type, reason, customerRefundUpi } = actionModal;
+
+    const isRefundNeeded = order.paymentStatus === 'PAID' || order.paymentStatus === 'PENDING_SELLER_CONFIRMATION';
+    if (isRefundNeeded && !customerRefundUpi?.trim()) {
+      setActionModal(prev => ({ ...prev, error: 'Please enter your UPI ID so your refund can be processed directly.' }));
+      return;
     }
 
+    setActionModal(prev => ({ ...prev, loading: true, error: '' }));
     try {
-      const res = await apiClient.post(`/orders/${orderId}/return`, { 
-        reason: reason || 'Customer requested return',
-        customerRefundUpi: customerRefundUpi || undefined
+      const endpoint = type === 'cancel' ? `/orders/${order._id}/cancel` : `/orders/${order._id}/return`;
+      const res = await apiClient.post(endpoint, {
+        reason: reason?.trim() || (type === 'cancel' ? 'Customer cancelled' : 'Return requested'),
+        customerRefundUpi: customerRefundUpi?.trim() || undefined
       });
+
+      const updated = res.data?.data || res.data;
+      setOrders(prev => prev.map(o => o._id === order._id ? updated : o));
+
+      setActionModal({ isOpen: false, type: 'cancel', order: null, reason: '', customerRefundUpi: '', loading: false, error: '' });
+
       modal.success({
-        title: 'Return Request Submitted',
-        message: 'Your return request was submitted successfully. The seller/admin will review and confirm.',
-        confirmText: 'Understood'
+        title: type === 'cancel' ? 'Order Cancelled' : 'Return Request Submitted',
+        message: type === 'cancel' 
+          ? `Order #${order._id.slice(-6).toUpperCase()} was cancelled. Refund destination set to: ${customerRefundUpi || 'Original source'}.`
+          : `Return request submitted for Order #${order._id.slice(-6).toUpperCase()}. The seller will review and process refund upon inspection.`,
+        confirmText: 'Done'
       });
-      setOrders(prev => prev.map(o => o._id === orderId ? (res.data?.data || res.data) : o));
     } catch (err) {
-      toast.error(err.response?.data?.message || err.message || 'Return request failed', 'Return Error');
+      setActionModal(prev => ({ ...prev, loading: false, error: err.response?.data?.message || err.message || 'Operation failed' }));
     }
   };
 
@@ -257,6 +269,15 @@ export default function CustomerDashboard() {
                       </span>
                     </div>
 
+                    {(order.customerRefundUpi || order.paymentDetails?.customerRefundUpi) && (
+                      <div className="text-center">
+                        <span className="block text-[10px] uppercase font-bold text-amber-600 mb-0.5">Refund UPI</span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-50 text-amber-900 border border-amber-200">
+                          {order.customerRefundUpi || order.paymentDetails?.customerRefundUpi}
+                        </span>
+                      </div>
+                    )}
+
                     {!isPaid && order.paymentMethod !== 'COD' && order.orderStatus !== 'CANCELLED' && (
                       <button
                         onClick={() => {
@@ -271,7 +292,7 @@ export default function CustomerDashboard() {
 
                     {canCancel && (
                       <button
-                        onClick={() => handleCancelOrder(order._id)}
+                        onClick={() => openCancelModal(order)}
                         className="border border-red-300 text-red-600 hover:bg-red-50 font-semibold px-3 py-1.5 rounded-lg text-xs transition"
                       >
                         Cancel
@@ -280,7 +301,7 @@ export default function CustomerDashboard() {
 
                     {canReturn && (
                       <button
-                        onClick={() => handleRequestReturn(order._id)}
+                        onClick={() => openReturnModal(order)}
                         className="border border-amber-500 text-amber-700 hover:bg-amber-50 font-semibold px-3 py-1.5 rounded-lg text-xs transition"
                       >
                         Request Return
@@ -396,6 +417,119 @@ export default function CustomerDashboard() {
             fetchOrders();
           }}
         />
+      )}
+
+      {/* Styled Interactive Cancel / Return Modal */}
+      {actionModal.isOpen && actionModal.order && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-gray-100 animate-in fade-in zoom-in duration-150">
+            <div className="flex justify-between items-start border-b pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <span>{actionModal.type === 'cancel' ? '🚫' : '📦'}</span>
+                  {actionModal.type === 'cancel' ? 'Cancel Order' : 'Request Product Return'}
+                </h3>
+                <p className="text-xs text-gray-500 font-mono mt-0.5">
+                  Order #{actionModal.order._id.slice(-8).toUpperCase()} • Total: ₹{actionModal.order.totalAmount}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActionModal(prev => ({ ...prev, isOpen: false }))}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none p-1"
+              >
+                ×
+              </button>
+            </div>
+
+            {actionModal.error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-3 rounded-xl font-medium">
+                {actionModal.error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitAction} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  {actionModal.type === 'cancel' ? 'Cancellation Reason *' : 'Reason for Return *'}
+                </label>
+                <select
+                  value={actionModal.reason}
+                  onChange={(e) => setActionModal(prev => ({ ...prev, reason: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-amber-500 outline-none mb-2"
+                >
+                  {actionModal.type === 'cancel' ? (
+                    <>
+                      <option value="Changed mind">Changed mind</option>
+                      <option value="Found lower price elsewhere">Found lower price elsewhere</option>
+                      <option value="Ordered by mistake">Ordered by mistake</option>
+                      <option value="Delivery time too long">Delivery time too long</option>
+                      <option value="Other">Other (specify below)</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="Product defective or damaged">Product defective or damaged</option>
+                      <option value="Item does not match description">Item does not match description</option>
+                      <option value="Wrong item received">Wrong item received</option>
+                      <option value="Quality not as expected">Quality not as expected</option>
+                      <option value="Other">Other (specify below)</option>
+                    </>
+                  )}
+                </select>
+                <input
+                  type="text"
+                  value={actionModal.reason}
+                  onChange={(e) => setActionModal(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Describe your reason in detail..."
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-amber-500 outline-none"
+                />
+              </div>
+
+              {/* UPI ID Input for refunds */}
+              {(actionModal.order.paymentStatus === 'PAID' || actionModal.order.paymentStatus === 'PENDING_SELLER_CONFIRMATION') && (
+                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                    <span>💳</span>
+                    <span>Your Refund Destination UPI ID *</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={actionModal.customerRefundUpi}
+                    onChange={(e) => setActionModal(prev => ({ ...prev, customerRefundUpi: e.target.value }))}
+                    placeholder="e.g. yourname@okhdfcbank or 9876543210@upi"
+                    required
+                    className="w-full border border-amber-300 bg-white rounded-lg px-3 py-2 text-xs font-mono font-bold text-gray-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                  />
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    The seller will send your full refund of ₹{actionModal.order.totalAmount} directly to this UPI ID upon approval.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setActionModal(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-2.5 rounded-xl text-xs transition"
+                >
+                  Keep Order
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionModal.loading}
+                  className={`flex-1 text-white font-bold py-2.5 rounded-xl text-xs shadow-md transition disabled:opacity-50 ${
+                    actionModal.type === 'cancel'
+                      ? 'bg-rose-600 hover:bg-rose-700'
+                      : 'bg-amber-600 hover:bg-amber-700'
+                  }`}
+                >
+                  {actionModal.loading ? 'Submitting...' : actionModal.type === 'cancel' ? 'Confirm Cancellation' : 'Submit Return Request'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

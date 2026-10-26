@@ -49,24 +49,61 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleRejectProduct = async (productId) => {
-    const reason = prompt('Enter rejection reason:') || 'Quality guidelines not met';
+  const [rejectModal, setRejectModal] = useState({
+    isOpen: false,
+    type: 'product',
+    targetId: null,
+    targetName: '',
+    reason: '',
+    loading: false
+  });
+
+  const handleOpenRejectProduct = (product) => {
+    setRejectModal({
+      isOpen: true,
+      type: 'product',
+      targetId: product._id,
+      targetName: product.name,
+      reason: 'Quality guidelines not met or missing required specifications.',
+      loading: false
+    });
+  };
+
+  const handleOpenRejectSeller = (seller) => {
+    setRejectModal({
+      isOpen: true,
+      type: 'seller',
+      targetId: seller._id,
+      targetName: seller.storeName,
+      reason: 'Business documentation incomplete or invalid UPI credentials.',
+      loading: false
+    });
+  };
+
+  const handleConfirmRejection = async (e) => {
+    e.preventDefault();
+    const { type, targetId, reason } = rejectModal;
+    setRejectModal(prev => ({ ...prev, loading: true }));
     try {
-      await apiClient.patch(`/admin/products/${productId}/moderate`, { status: 'REJECTED', reason });
-      setModeration(prev => prev.filter(p => p._id !== productId));
-      toast.info('Product rejected.', 'Moderation Updated');
+      if (type === 'product') {
+        await apiClient.patch(`/admin/products/${targetId}/moderate`, { status: 'REJECTED', reason });
+        setModeration(prev => prev.filter(p => p._id !== targetId));
+        toast.info('Product rejected.', 'Moderation Updated');
+      } else {
+        await apiClient.patch(`/admin/sellers/${targetId}/status`, { status: 'REJECTED', reason });
+        setSellers(prev => prev.filter(s => s._id !== targetId));
+        toast.info('Seller application rejected.', 'Seller Status Updated');
+      }
+      setRejectModal({ isOpen: false, type: 'product', targetId: null, targetName: '', reason: '', loading: false });
     } catch (err) {
-      toast.error(err.response?.data?.message || err.message, 'Moderation Error');
+      toast.error(err.response?.data?.message || err.message, 'Rejection Error');
+      setRejectModal(prev => ({ ...prev, loading: false }));
     }
   };
 
   const handleSellerStatus = async (sellerId, status) => {
-    let reason = '';
-    if (status === 'REJECTED') {
-      reason = prompt('Enter rejection reason:') || 'Documentation incomplete';
-    }
     try {
-      await apiClient.patch(`/admin/sellers/${sellerId}/status`, { status, reason });
+      await apiClient.patch(`/admin/sellers/${sellerId}/status`, { status });
       setSellers(prev => prev.filter(s => s._id !== sellerId));
       toast.success(`Seller application marked as ${status}!`, 'Seller Status Updated');
     } catch (err) {
@@ -149,7 +186,7 @@ const AdminDashboard = () => {
                         Approve
                       </button>
                       <button 
-                        onClick={() => handleSellerStatus(seller._id, 'REJECTED')} 
+                        onClick={() => handleOpenRejectSeller(seller)} 
                         className='text-xs bg-red-600 text-white font-semibold px-3 py-1.5 rounded-lg hover:bg-red-700 transition'
                       >
                         Reject
@@ -184,7 +221,7 @@ const AdminDashboard = () => {
                     Publish
                   </button>
                   <button 
-                    onClick={() => handleRejectProduct(product._id)} 
+                    onClick={() => handleOpenRejectProduct(product)} 
                     className='text-xs bg-red-600 text-white font-semibold px-3 py-1.5 rounded-lg hover:bg-red-700 transition'
                   >
                     Reject
@@ -266,6 +303,68 @@ const AdminDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Styled Rejection Modal */}
+      {rejectModal.isOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-gray-100 animate-in fade-in zoom-in duration-150">
+            <div className="flex justify-between items-start border-b pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <span className="text-rose-600">⚠️</span>
+                  {rejectModal.type === 'product' ? 'Reject Product Submission' : 'Reject Seller Application'}
+                </h3>
+                <p className="text-xs text-gray-500 font-semibold mt-0.5">
+                  Target: {rejectModal.targetName || 'Selected Item'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectModal(prev => ({ ...prev, isOpen: false }))}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none p-1"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmRejection} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Reason for Rejection *
+                </label>
+                <textarea
+                  rows="3"
+                  required
+                  value={rejectModal.reason}
+                  onChange={(e) => setRejectModal(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Specify why this submission is being rejected so the applicant can correct it..."
+                  className="w-full border border-gray-300 rounded-lg p-3 text-xs focus:ring-2 focus:ring-rose-500 outline-none"
+                />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  This explanation will be recorded and communicated to the vendor.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectModal(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-2.5 rounded-xl text-xs transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={rejectModal.loading}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md transition disabled:opacity-50"
+                >
+                  {rejectModal.loading ? 'Rejecting...' : 'Confirm Rejection'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

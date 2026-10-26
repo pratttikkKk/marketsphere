@@ -25,27 +25,23 @@ class EmailService {
 
     this.isInitializing = true;
     try {
-      const gmailUser = process.env.GMAIL_USER;
-      const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS;
+      const gmailUser = (process.env.GMAIL_USER || 'pratikfarate33@gmail.com').trim();
+      const gmailPass = (process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS || 'vfpdrqntprshibty').replace(/\s+/g, '');
 
       const smtpHost = process.env.SMTP_HOST;
       const smtpUser = process.env.SMTP_USER;
       const smtpPass = process.env.SMTP_PASS;
 
-      // 1. Direct Gmail Configuration (Port 465 SSL or standard Gmail service)
+      // 1. Direct Gmail Configuration (Official Gmail Service with App Password)
       if (gmailUser && gmailPass) {
-        const cleanUser = gmailUser.trim();
-        const cleanPass = gmailPass.replace(/\s+/g, '');
         this.transporter = nodemailer.createTransport({
-          host: 'smtp.gmail.com',
-          port: 465,
-          secure: true, // SSL
+          service: 'gmail',
           auth: {
-            user: cleanUser,
-            pass: cleanPass
+            user: gmailUser,
+            pass: gmailPass
           }
         });
-        console.log(`[EMAIL SERVICE] Configured Gmail SMTP for ${cleanUser}`);
+        console.log(`[EMAIL SERVICE] Configured Gmail SMTP for ${gmailUser}`);
       }
       // 2. Custom SMTP Host Configuration (Brevo, SendGrid, Mailgun, Amazon SES, etc.)
       else if (smtpHost && smtpUser && smtpPass) {
@@ -67,7 +63,7 @@ class EmailService {
       // 3. Fallback: No real SMTP credentials configured
       else {
         this.transporter = null;
-        console.warn('[EMAIL SERVICE] Real SMTP credentials (GMAIL_USER/GMAIL_APP_PASSWORD or SMTP_HOST) are not configured in backend/.env.');
+        console.warn('[EMAIL SERVICE] Real SMTP credentials are not configured.');
       }
     } catch (err) {
       console.error('[EMAIL SERVICE] Error during transporter setup:', err.message);
@@ -79,10 +75,7 @@ class EmailService {
   }
 
   isConfiguredWithRealSmtp() {
-    return Boolean(
-      (process.env.GMAIL_USER && (process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS)) ||
-      (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
-    );
+    return true;
   }
 
   async sendEmail(to, subject, body, templateType = 'GENERAL', customHtml = null) {

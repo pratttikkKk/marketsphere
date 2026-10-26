@@ -8,9 +8,10 @@ try {
   if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
   }
+  fs.accessSync(uploadDir, fs.constants.W_OK);
 } catch (err) {
   // If local /app/uploads is read-only or restricted by container permissions, fallback to system temp dir
-  console.warn('[UPLOAD] Local uploads directory inaccessible, falling back to tempdir:', err.message);
+  console.warn('[UPLOAD] Local uploads directory inaccessible or lacking write permission, falling back to tempdir:', err.message);
   uploadDir = path.join(os.tmpdir(), 'marketsphere-uploads');
   if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });

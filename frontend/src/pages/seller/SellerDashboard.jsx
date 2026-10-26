@@ -308,8 +308,16 @@ const SellerDashboard = () => {
                       </span>
                       {order.paymentStatus === 'REFUND_PENDING' && (
                         <p className="text-[11px] text-rose-700 font-semibold">
-                          Refund Pending {order.paymentDetails?.customerRefundUpi ? `to: ${order.paymentDetails.customerRefundUpi}` : ''}
+                          Refund Pending
                         </p>
+                      )}
+                      {(order.paymentStatus === 'REFUND_PENDING' || order.orderStatus === 'CANCELLED' || order.orderStatus === 'RETURN_REQUESTED' || order.orderStatus === 'RETURNED') && (
+                        <div className="mt-1 p-2 bg-rose-50 border border-rose-200 rounded text-left">
+                          <span className="block text-[10px] uppercase font-bold text-rose-800">Refund To Customer UPI:</span>
+                          <span className="font-mono text-xs font-bold text-rose-950 select-all block break-all">
+                            {order.customerRefundUpi || order.paymentDetails?.customerRefundUpi || order.paymentDetails?.senderUpiId || (order.customerId?.phone ? `${order.customerId.phone}@upi` : 'Customer UPI not recorded')}
+                          </span>
+                        </div>
                       )}
                       {order.paymentStatus === 'REFUNDED' && order.paymentDetails?.refundUtr && (
                         <p className="text-[11px] font-mono text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
@@ -589,15 +597,30 @@ const SellerDashboard = () => {
               </div>
             )}
 
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 space-y-1.5 text-xs text-amber-900">
-              <p className="font-bold flex items-center gap-1">
-                <span>📍</span> Customer Refund Destination:
-              </p>
-              <div className="bg-white p-2 rounded border border-amber-200 font-mono text-sm font-bold text-gray-900 select-all">
-                {refundingOrder.paymentDetails?.customerRefundUpi || refundingOrder.paymentDetails?.senderUpiId || 'No UPI recorded (Contact customer)'}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 space-y-2 text-xs text-amber-900">
+              <div className="flex justify-between items-center">
+                <p className="font-bold flex items-center gap-1 text-xs">
+                  <span>📍</span> Customer Refund UPI ID:
+                </p>
+                {(refundingOrder.customerRefundUpi || refundingOrder.paymentDetails?.customerRefundUpi || refundingOrder.paymentDetails?.senderUpiId) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const upi = refundingOrder.customerRefundUpi || refundingOrder.paymentDetails?.customerRefundUpi || refundingOrder.paymentDetails?.senderUpiId;
+                      navigator.clipboard.writeText(upi);
+                      toast.success('UPI ID copied to clipboard!', 'Copied');
+                    }}
+                    className="bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold px-2 py-0.5 rounded text-[10px] transition"
+                  >
+                    Copy UPI
+                  </button>
+                )}
               </div>
-              <p className="text-[11px] text-amber-700">
-                Please transfer ₹{refundingOrder.totalAmount} to the customer's UPI ID above using PhonePe, GPay, Paytm, or your bank app.
+              <div className="bg-white p-2.5 rounded border border-amber-200 font-mono text-sm font-bold text-gray-900 select-all break-all">
+                {refundingOrder.customerRefundUpi || refundingOrder.paymentDetails?.customerRefundUpi || refundingOrder.paymentDetails?.senderUpiId || (refundingOrder.customerId?.phone ? `${refundingOrder.customerId.phone}@upi` : 'No UPI recorded (Please contact customer)')}
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Please transfer ₹{refundingOrder.totalAmount} to the customer's UPI ID above using PhonePe, GPay, Paytm, or your bank app, then enter the 12-digit UTR below.
               </p>
             </div>
 

@@ -48,19 +48,28 @@ exports.register = async (req, res, next) => {
     // 3. Verify uniqueness of Email in confirmed Users
     const emailExists = await User.findOne({ email: normalizedEmail });
     if (emailExists) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'An account is already registered with this email address. Please sign in or use another email.' 
-      });
+      if (!emailExists.isEmailVerified) {
+        // Purge stale unverified record so user can register fresh
+        await User.deleteOne({ _id: emailExists._id });
+      } else {
+        return res.status(400).json({ 
+          status: 'error', 
+          message: 'An account is already registered with this email address. Please sign in or use another email.' 
+        });
+      }
     }
 
     // 4. Verify uniqueness of Mobile Number in confirmed Users
     const phoneExists = await User.findOne({ phone: normalizedPhone });
     if (phoneExists) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'An account is already registered with this mobile number. Each mobile number can only be linked to one account.' 
-      });
+      if (!phoneExists.isEmailVerified) {
+        await User.deleteOne({ _id: phoneExists._id });
+      } else {
+        return res.status(400).json({ 
+          status: 'error', 
+          message: 'An account is already registered with this mobile number. Each mobile number can only be linked to one account.' 
+        });
+      }
     }
 
     const salt = await bcrypt.genSalt(10);

@@ -97,6 +97,7 @@ const orderSchema = new mongoose.Schema({
   deliveredAt: { type: Date, default: null },
   cancellationReason: { type: String, default: null },
   returnReason: { type: String, default: null },
+  customerRefundUpi: { type: String, default: null },
   timeline: [timelineSchema]
 }, { timestamps: true });
 

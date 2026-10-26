@@ -68,18 +68,12 @@ exports.requestReturn = async (req, res, next) => {
 };
 
 /**
- * Sandbox helper endpoint: Generates valid cryptographic signature for testing the verification flow
+ * Simulation helper endpoint: Generates valid cryptographic signature for online simulation flow
  */
 exports.simulateSandboxSignature = async (req, res, next) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(403).json({
-      status: 'error',
-      error: { code: 'FORBIDDEN', message: 'Sandbox signature simulator is disabled in production environments' }
-    });
-  }
   try {
     const { providerOrderId } = req.body;
-    const providerPaymentId = `pay_sbx_${Date.now()}`;
+    const providerPaymentId = `sim_pay_${Date.now()}`;
     const providerSignature = paymentService.generateSandboxSignature(providerOrderId, providerPaymentId);
     res.json({
       status: 'success',

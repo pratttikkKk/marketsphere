@@ -321,7 +321,10 @@ class OrderService {
 
     const refundUpi = customerRefundUpi ? customerRefundUpi.trim() : (order.paymentDetails?.senderUpiId || null);
     if (refundUpi) {
+      order.customerRefundUpi = refundUpi;
+      if (!order.paymentDetails) order.paymentDetails = {};
       order.paymentDetails.customerRefundUpi = refundUpi;
+      order.markModified('paymentDetails');
     }
 
     // Restore stock atomically
@@ -413,7 +416,10 @@ class OrderService {
 
     const refundUpi = customerRefundUpi ? customerRefundUpi.trim() : (order.paymentDetails?.senderUpiId || null);
     if (refundUpi) {
+      order.customerRefundUpi = refundUpi;
+      if (!order.paymentDetails) order.paymentDetails = {};
       order.paymentDetails.customerRefundUpi = refundUpi;
+      order.markModified('paymentDetails');
     }
     if (order.paymentStatus === 'PAID') {
       order.paymentStatus = 'REFUND_PENDING';
