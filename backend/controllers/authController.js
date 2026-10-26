@@ -108,12 +108,9 @@ exports.register = async (req, res, next) => {
 
     res.status(201).json({
       status: 'success',
-      message: emailDispatch.fallback
-        ? `A 6-digit verification code has been generated for ${normalizedEmail}.`
-        : `A 6-digit verification code has been dispatched to your email address (${normalizedEmail}). Please check your inbox.`,
+      message: `A 6-digit verification code has been dispatched to your email address (${normalizedEmail}). Please check your inbox.`,
       requiresOtp: true,
-      email: normalizedEmail,
-      devOtp: emailDispatch.devOtp || (emailDispatch.fallback ? otp : undefined)
+      email: normalizedEmail
     });
   } catch (error) {
     next(error);
@@ -269,11 +266,8 @@ exports.resendEmailOtp = async (req, res, next) => {
 
     res.json({
       status: 'success',
-      message: emailDispatch.fallback
-        ? `A new 6-digit verification code has been generated for ${pending.email}.`
-        : 'A new 6-digit verification code has been dispatched to your email address.',
-      email: pending.email,
-      devOtp: emailDispatch.devOtp || (emailDispatch.fallback ? otp : undefined)
+      message: 'A new 6-digit verification code has been dispatched to your email address.',
+      email: pending.email
     });
   } catch (error) {
     next(error);

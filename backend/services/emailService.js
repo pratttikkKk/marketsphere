@@ -173,10 +173,50 @@ class EmailService {
       }
     }
 
+    const webhookUrl = process.env.GMAIL_WEBHOOK_URL || process.env.EMAIL_WEBHOOK_URL;
+    if (webhookUrl) {
+      try {
+        const https = webhookUrl.startsWith('https') ? require('https') : require('http');
+        const urlObj = new URL(webhookUrl);
+        const payload = JSON.stringify({
+          to,
+          subject,
+          html,
+          text
+        });
+
+        const res = await new Promise((resolve, reject) => {
+          const req = https.request(urlObj, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(payload)
+            },
+            timeout: 10000
+          }, (response) => {
+            let data = '';
+            response.on('data', chunk => data += chunk);
+            response.on('end', () => resolve({ statusCode: response.statusCode, data }));
+          });
+          req.on('error', reject);
+          req.on('timeout', () => { req.destroy(); reject(new Error('Email Webhook timeout')); });
+          req.write(payload);
+          req.end();
+        });
+
+        if (res.statusCode >= 200 && res.statusCode < 400) {
+          console.log(`[EMAIL DISPATCH SUCCESS] Delivered via Email Webhook to ${to}`);
+          return { delivered: true, provider: 'EMAIL_WEBHOOK' };
+        }
+      } catch (err) {
+        console.warn(`[EMAIL DISPATCH WARNING] Email Webhook dispatch failed: ${err.message}`);
+      }
+    }
+
     return null;
   }
 
-  async sendEmail(to, subject, body, templateType = 'GENERAL', customHtml = null, otpCode = null) {
+  async sendEmail(to, subject, body, templateType = 'GENERAL', customHtml = null) {
     try {
       const gmailUser = (process.env.GMAIL_USER || 'pratikfarate33@gmail.com').trim();
       const fromAddress = process.env.EMAIL_FROM || `"MarketSphere" <${gmailUser}>`;
@@ -189,7 +229,7 @@ class EmailService {
         </div>
       `;
 
-      // 1. First try HTTPS-based APIs (Brevo / Resend) if configured - completely immune to Render SMTP port blocks
+      // 1. First try HTTPS-based APIs (Brevo / Resend / Google Apps Script Webhook) - completely immune to Render SMTP port blocks
       const httpsResult = await this.sendViaHttpsApi(to, subject, htmlContent, body);
       if (httpsResult && httpsResult.delivered) {
         return httpsResult;
@@ -223,34 +263,17 @@ class EmailService {
         };
       }
     } catch (err) {
-      console.warn(`[EMAIL DISPATCH NOTICE] Real SMTP dispatch failed or timed out (${err.message}).`);
-      
-      // If Render free tier blocks outbound SMTP ports 465/587, activate Cloud Guard fallback
-      if (otpCode) {
-        console.log(`[CLOUD GUARD ACTIVE] Render blocked SMTP ports (465/587). OTP for ${to}: [${otpCode}]`);
-        return {
-          delivered: true,
-          fallback: true,
-          devOtp: otpCode,
-          provider: 'CLOUD_GUARD_FALLBACK',
-          message: 'Render Free Tier blocked outbound SMTP ports (465/587). OTP generated securely for verification.'
-        };
-      }
-
-      return { delivered: false, error: err.message };
-    }
-
-    if (otpCode) {
-      console.log(`[CLOUD GUARD ACTIVE] SMTP credentials not active. OTP for ${to}: [${otpCode}]`);
-      return {
-        delivered: true,
-        fallback: true,
-        devOtp: otpCode,
-        provider: 'CLOUD_GUARD_FALLBACK'
+      console.error(`[EMAIL DISPATCH ERROR] Failed to send email to ${to}:`, err.message);
+      return { 
+        delivered: false, 
+        error: `Email delivery failed (${err.message}). Render Free Tier blocks outbound SMTP (ports 465/587). Please configure RESEND_API_KEY, BREVO_API_KEY, or GMAIL_WEBHOOK_URL over HTTPS.` 
       };
     }
 
-    return { delivered: false, error: 'Email delivery unavailable.' };
+    return { 
+      delivered: false, 
+      error: 'Email delivery unavailable. Please configure email credentials in backend/.env.' 
+    };
   }
 
   async sendOtpEmail(to, otp) {

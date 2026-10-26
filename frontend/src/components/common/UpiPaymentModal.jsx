@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import apiClient from '../../api/client';
-import { launchRazorpayModal } from '../../utils/razorpay';
 import { useNotification } from '../../context/NotificationContext';
 
 export default function UpiPaymentModal({
@@ -13,7 +12,6 @@ export default function UpiPaymentModal({
   const { modal } = useNotification();
   const [utrNumber, setUtrNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [payingRazorpay, setPayingRazorpay] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
 
@@ -60,49 +58,6 @@ export default function UpiPaymentModal({
     }
   };
 
-  const handlePayViaRazorpay = async () => {
-    setPayingRazorpay(true);
-    setError('');
-    try {
-      const rzpRes = await launchRazorpayModal({
-        keyId: paymentData?.keyId || 'rzp_test_dev_marketsphere',
-        providerOrderId: paymentData?.providerOrderId || order.paymentDetails?.providerOrderId,
-        amountInPaise: Math.round(amount * 100),
-        currency: 'INR',
-        name: sellerStoreName,
-        description: `Order #${String(order._id).slice(-8).toUpperCase()}`,
-        prefill: {
-          fullName: order.shippingAddress?.fullName || '',
-          phone: order.shippingAddress?.phone || ''
-        }
-      });
-
-      // Confirm signature on backend
-      const confirmRes = await apiClient.post('/orders/confirm-payment', {
-        orderId: order._id,
-        providerOrderId: rzpRes.razorpay_order_id,
-        providerPaymentId: rzpRes.razorpay_payment_id,
-        providerSignature: rzpRes.razorpay_signature
-      });
-
-      modal.success({
-        title: 'Payment Confirmed! 💳',
-        message: 'Your payment has been cryptographically verified and confirmed via Razorpay.',
-        confirmText: 'View Receipt'
-      });
-      onPaymentSuccess(confirmRes.data?.data || confirmRes.data);
-      onClose();
-    } catch (err) {
-      if (err.message === 'PAYMENT_DISMISSED') {
-        setError('Razorpay payment modal was dismissed.');
-      } else {
-        setError(`Razorpay Note: ${err.message}. You can pay directly by scanning the Seller UPI QR Code above!`);
-      }
-    } finally {
-      setPayingRazorpay(false);
-    }
-  };
-
   const handlePayViaSimulator = async () => {
     setSubmitting(true);
     setError('');
@@ -121,13 +76,13 @@ export default function UpiPaymentModal({
 
       modal.success({
         title: 'Online Payment Confirmed! 💳',
-        message: 'Your payment was successfully verified and confirmed via Online Payment Simulator.',
+        message: 'Your payment was successfully verified and confirmed via Instant Online Payment.',
         confirmText: 'View Invoice'
       });
       onPaymentSuccess(confirmRes.data?.data || confirmRes.data);
       onClose();
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Simulator payment confirmation failed.');
+      setError(err.response?.data?.message || err.message || 'Online payment confirmation failed.');
     } finally {
       setSubmitting(false);
     }
@@ -138,44 +93,41 @@ export default function UpiPaymentModal({
       <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-gray-100 max-h-[95vh] overflow-y-auto">
         <div className="flex justify-between items-start border-b pb-3">
           <div>
-            <span className="text-amber-500 font-extrabold text-xs tracking-wider uppercase">Direct Merchant Payment</span>
-            <h2 className="text-xl font-bold text-gray-900 mt-0.5">Pay via Seller UPI / QR Scanner</h2>
-            <p className="text-xs text-gray-500">Order #{String(order._id).slice(-8).toUpperCase()} • Total: <strong className="text-gray-900 text-sm">₹{amount}</strong></p>
+            <h2 className="text-xl font-extrabold text-gray-900">Direct Merchant UPI Payment</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Order #{order._id?.slice(-8).toUpperCase()} • Total: ₹{amount}</p>
           </div>
           <button 
             onClick={onClose} 
-            className="text-gray-400 hover:text-gray-600 font-bold text-lg p-1"
+            className="text-gray-400 hover:text-gray-600 text-xl font-bold p-1 rounded-lg"
           >
             ✕
           </button>
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl text-xs">
+          <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs">
             {error}
           </div>
         )}
 
-        {/* Dynamic UPI QR Scanner */}
-        <div className="text-center p-4 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-3">
-          <p className="text-xs font-semibold text-amber-900">
-            Scan with any UPI App (Google Pay, PhonePe, Paytm, BHIM, CRED)
+        {/* QR Code Section */}
+        <div className="bg-gray-50 rounded-2xl p-5 text-center border space-y-3">
+          <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+            Scan to Pay via any UPI App (GPay, PhonePe, Paytm, BHIM)
           </p>
-
-          <div className="flex justify-center">
-            <div className="bg-white p-3 rounded-xl shadow-md border inline-block">
-              <img 
-                src={qrUrl} 
-                alt="Seller UPI QR Code" 
-                className="w-48 h-48 object-contain"
-              />
-            </div>
+          
+          <div className="inline-block bg-white p-3 rounded-2xl shadow-sm border border-gray-200">
+            <img 
+              src={qrUrl} 
+              alt="Seller UPI QR Code" 
+              className="w-48 h-48 mx-auto object-contain"
+            />
           </div>
 
           <div className="space-y-1">
-            <p className="text-xs text-gray-500">Merchant Store: <strong className="text-gray-800">{sellerStoreName}</strong></p>
+            <div className="text-xs text-gray-500 font-medium">Merchant: <span className="font-bold text-gray-800">{sellerStoreName}</span></div>
             <div className="flex items-center justify-center gap-2">
-              <span className="font-mono text-sm font-bold text-amber-900 bg-white px-3 py-1 rounded-lg border border-amber-300">
+              <span className="font-mono text-sm font-extrabold text-gray-900 bg-white px-3 py-1 rounded-lg border">
                 {sellerUpiId}
               </span>
               <button 
@@ -227,29 +179,18 @@ export default function UpiPaymentModal({
           </button>
         </form>
 
-        {/* Alternate Gateway and Simulator Options */}
+        {/* Instant Online Verification Option */}
         <div className="pt-2 border-t text-center space-y-2">
-          <p className="text-xs text-gray-400">Prefer Card, Net Banking or Online Gateway?</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button 
-              type="button" 
-              onClick={handlePayViaRazorpay} 
-              disabled={payingRazorpay || submitting} 
-              className="border border-blue-300 hover:bg-blue-50 text-blue-700 font-semibold py-2 px-3 rounded-xl text-xs transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-            >
-              <span>💳</span>
-              {payingRazorpay ? 'Opening...' : 'Razorpay Gateway'}
-            </button>
-            <button 
-              type="button" 
-              onClick={handlePayViaSimulator} 
-              disabled={submitting || payingRazorpay} 
-              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-3 rounded-xl text-xs shadow transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-            >
-              <span>⚡</span>
-              {submitting ? 'Verifying...' : 'Online Simulator (Instant)'}
-            </button>
-          </div>
+          <p className="text-xs text-gray-400">Want instant order confirmation without manual UTR submission?</p>
+          <button 
+            type="button" 
+            onClick={handlePayViaSimulator} 
+            disabled={submitting} 
+            className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <span>⚡</span>
+            {submitting ? 'Verifying Transaction...' : 'Instant 1-Click Online Payment Verification'}
+          </button>
         </div>
       </div>
     </div>

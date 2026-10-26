@@ -14,5 +14,6 @@ router.post('/:id/return', idempotency, orderController.requestReturn);
 router.post('/:id/submit-upi-payment', idempotency, orderController.submitUpiPayment);
 router.post('/confirm-payment', idempotency, orderController.confirmPayment);
 router.post('/simulate-sandbox-signature', orderController.simulateSandboxSignature);
+router.post('/simulate-signature', orderController.simulateSandboxSignature);
 
 module.exports = router;

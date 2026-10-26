@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import apiClient from '../../api/client';
-import { launchRazorpayModal } from '../../utils/razorpay';
 import UpiPaymentModal from '../../components/common/UpiPaymentModal';
 import { useNotification } from '../../context/NotificationContext';
 
@@ -64,7 +63,7 @@ export default function Checkout() {
       const idempotencyKey = `ms_chk_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       
       const res = await apiClient.post('/orders/checkout', {
-        paymentMethod: paymentMethod === 'COD' ? 'COD' : 'RAZORPAY',
+        paymentMethod: paymentMethod === 'COD' ? 'COD' : 'ONLINE',
         shippingAddress: address,
         couponCode: appliedCoupon ? appliedCoupon.code : undefined
       }, {
@@ -397,8 +396,8 @@ export default function Checkout() {
                   className="h-4 w-4 text-amber-600 focus:ring-amber-500"
                 />
                 <div>
-                  <p className="font-semibold text-gray-800 text-sm">Instant Online Payment (Razorpay / Cryptographic Sandbox)</p>
-                  <p className="text-xs text-gray-500">Pay securely via UPI, Card, or Net Banking with verified HMAC signature.</p>
+                  <p className="font-semibold text-gray-800 text-sm">Direct Merchant UPI & Instant Online Payment</p>
+                  <p className="text-xs text-gray-500">Scan Seller UPI QR Code or complete 1-Click Instant Online Payment.</p>
                 </div>
               </label>
 

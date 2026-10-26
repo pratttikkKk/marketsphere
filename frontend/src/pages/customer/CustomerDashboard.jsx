@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import apiClient from '../../api/client';
 import { Link } from 'react-router-dom';
-import { launchRazorpayModal } from '../../utils/razorpay';
 import UpiPaymentModal from '../../components/common/UpiPaymentModal';
 import { useNotification } from '../../context/NotificationContext';
 
@@ -30,47 +29,11 @@ export default function CustomerDashboard() {
     fetchOrders();
   }, []);
 
-  const handleMakePayment = async (orderId) => {
+  const handleMakePayment = (orderId) => {
     const targetOrder = orders.find(o => o._id === orderId);
     if (!targetOrder) return;
-
-    setPayingOrderId(orderId);
-    try {
-      const razorpayResponse = await launchRazorpayModal({
-        keyId: targetOrder.paymentDetails?.keyId || 'rzp_test_dev_marketsphere',
-        providerOrderId: targetOrder.paymentDetails?.providerOrderId,
-        amountInPaise: Math.round(targetOrder.totalAmount * 100),
-        currency: 'INR',
-        name: 'MarketSphere Marketplace',
-        description: `Order #${String(orderId).slice(-8).toUpperCase()}`,
-        prefill: {
-          fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-          email: user.email || ''
-        }
-      });
-
-      const confirmRes = await apiClient.post('/orders/confirm-payment', {
-        orderId,
-        providerOrderId: razorpayResponse.razorpay_order_id,
-        providerPaymentId: razorpayResponse.razorpay_payment_id,
-        providerSignature: razorpayResponse.razorpay_signature
-      });
-
-      const updatedOrder = confirmRes.data || confirmRes;
-      toast.success('Payment verified and confirmed via Razorpay!', 'Payment Verified');
-      setOrders(prev => prev.map(o => o._id === orderId ? updatedOrder : o));
-      if (selectedBillOrder && selectedBillOrder._id === orderId) {
-        setSelectedBillOrder(updatedOrder);
-      }
-    } catch (err) {
-      if (err.message === 'PAYMENT_DISMISSED') {
-        toast.info('Payment window was dismissed. Order remains Pending Payment.', 'Payment Dismissed');
-      } else {
-        toast.error(err.response?.data?.message || err.message || 'Payment processing failed', 'Payment Error');
-      }
-    } finally {
-      setPayingOrderId(null);
-    }
+    setSelectedUpiOrder(targetOrder);
+    setShowUpiModal(true);
   };
 
   const [actionModal, setActionModal] = useState({
