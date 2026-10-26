@@ -177,63 +177,99 @@ class EmailService {
     if (webhookUrl) {
       if (webhookUrl.includes('YOUR_DEPLOYMENT_ID')) {
         console.warn('[EMAIL WEBHOOK CONFIG WARNING] GMAIL_WEBHOOK_URL contains "YOUR_DEPLOYMENT_ID" placeholder. Replace with your actual Google Apps Script deployment ID.');
-      } else {
-        try {
-          const payload = JSON.stringify({ to, subject, html, text });
-          let resStatus = 0;
-          let resText = '';
+        return {
+          delivered: false,
+          provider: 'EMAIL_WEBHOOK',
+          error: 'GMAIL_WEBHOOK_URL contains "YOUR_DEPLOYMENT_ID" placeholder. Please replace it with your actual Google deployment ID in Render.'
+        };
+      }
 
-          if (typeof fetch === 'function') {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 15000);
-            try {
-              const response = await fetch(webhookUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: payload,
-                redirect: 'follow',
-                signal: controller.signal
-              });
-              clearTimeout(timer);
-              resStatus = response.status;
-              resText = await response.text();
-            } catch (fetchErr) {
-              clearTimeout(timer);
-              throw fetchErr;
-            }
-          } else {
-            const https = webhookUrl.startsWith('https') ? require('https') : require('http');
-            const urlObj = new URL(webhookUrl);
-            const res = await new Promise((resolve, reject) => {
-              const req = https.request(urlObj, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Content-Length': Buffer.byteLength(payload)
-                },
-                timeout: 15000
-              }, (response) => {
-                let data = '';
-                response.on('data', chunk => data += chunk);
-                response.on('end', () => resolve({ statusCode: response.statusCode, data }));
-              });
-              req.on('error', reject);
-              req.on('timeout', () => { req.destroy(); reject(new Error('Email Webhook timeout')); });
-              req.write(payload);
-              req.end();
+      try {
+        const payload = JSON.stringify({ to, subject, html, text });
+        let resStatus = 0;
+        let resText = '';
+
+        const urlObj = new URL(webhookUrl);
+        urlObj.searchParams.set('to', to);
+        urlObj.searchParams.set('subject', subject);
+
+        if (typeof fetch === 'function') {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 15000);
+          try {
+            const response = await fetch(urlObj.toString(), {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/plain, */*'
+              },
+              body: payload,
+              redirect: 'follow',
+              signal: controller.signal
             });
-            resStatus = res.statusCode;
-            resText = res.data;
+            clearTimeout(timer);
+            resStatus = response.status;
+            resText = await response.text();
+          } catch (fetchErr) {
+            clearTimeout(timer);
+            throw fetchErr;
           }
-
-          console.log(`[EMAIL WEBHOOK DISPATCH] HTTP ${resStatus} Response: ${resText.slice(0, 150)}`);
-          if (resStatus >= 200 && resStatus < 400) {
-            console.log(`[EMAIL DISPATCH SUCCESS] Delivered via Email Webhook to ${to}`);
-            return { delivered: true, provider: 'EMAIL_WEBHOOK', response: resText.slice(0, 100) };
-          }
-        } catch (err) {
-          console.warn(`[EMAIL DISPATCH WARNING] Email Webhook dispatch failed: ${err.message}`);
+        } else {
+          const https = webhookUrl.startsWith('https') ? require('https') : require('http');
+          const res = await new Promise((resolve, reject) => {
+            const req = https.request(urlObj, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+              },
+              timeout: 15000
+            }, (response) => {
+              let data = '';
+              response.on('data', chunk => data += chunk);
+              response.on('end', () => resolve({ statusCode: response.statusCode, data }));
+            });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('Email Webhook timeout')); });
+            req.write(payload);
+            req.end();
+          });
+          resStatus = res.statusCode;
+          resText = res.data;
         }
+
+        console.log(`[EMAIL WEBHOOK DISPATCH] HTTP ${resStatus} Response: ${resText.slice(0, 150)}`);
+        
+        let parsedData = null;
+        try {
+          parsedData = JSON.parse(resText);
+        } catch (_) {}
+
+        if (parsedData && parsedData.status === 'error') {
+          return {
+            delivered: false,
+            provider: 'EMAIL_WEBHOOK',
+            error: `Google Apps Script error: ${parsedData.error || resText.slice(0, 150)}`
+          };
+        }
+
+        if (resStatus >= 200 && resStatus < 400) {
+          console.log(`[EMAIL DISPATCH SUCCESS] Delivered via Email Webhook to ${to}`);
+          return { delivered: true, provider: 'EMAIL_WEBHOOK', response: resText.slice(0, 100) };
+        } else {
+          return {
+            delivered: false,
+            provider: 'EMAIL_WEBHOOK',
+            error: `Email Webhook returned HTTP ${resStatus}: ${resText.slice(0, 200)}`
+          };
+        }
+      } catch (err) {
+        console.warn(`[EMAIL DISPATCH WARNING] Email Webhook dispatch failed: ${err.message}`);
+        return {
+          delivered: false,
+          provider: 'EMAIL_WEBHOOK',
+          error: `Email Webhook connection error: ${err.message}`
+        };
       }
     }
 
@@ -255,8 +291,15 @@ class EmailService {
 
       // 1. First try HTTPS-based APIs (Brevo / Resend / Google Apps Script Webhook) - completely immune to Render SMTP port blocks
       const httpsResult = await this.sendViaHttpsApi(to, subject, htmlContent, body);
-      if (httpsResult && httpsResult.delivered) {
-        return httpsResult;
+      if (httpsResult) {
+        if (httpsResult.delivered) {
+          return httpsResult;
+        }
+        // If an HTTPS relay was explicitly configured (GMAIL_WEBHOOK_URL / RESEND / BREVO), report its explicit failure
+        // instead of falling back to dead SMTP which times out.
+        if (process.env.GMAIL_WEBHOOK_URL || process.env.RESEND_API_KEY || process.env.BREVO_API_KEY) {
+          return httpsResult;
+        }
       }
 
       // 2. Try Standard SMTP (Nodemailer) with strict timeout guard

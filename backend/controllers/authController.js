@@ -472,13 +472,45 @@ exports.deleteAddress = async (req, res, next) => {
 exports.testEmailStatus = async (req, res, next) => {
   try {
     const to = (req.query.to || process.env.GMAIL_USER || 'pratikfarate33@gmail.com').trim();
+    const webhookUrl = process.env.GMAIL_WEBHOOK_URL || process.env.EMAIL_WEBHOOK_URL;
+
+    let webhookProbe = null;
+    if (webhookUrl) {
+      try {
+        const maskedUrl = webhookUrl.replace(/(\/s\/)[^/]{10,}(\/exec)/, '$1[MASKED_DEPLOYMENT_ID]$2');
+        let getStatus = null;
+        let getBody = null;
+        if (typeof fetch === 'function') {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 10000);
+          try {
+            const probeRes = await fetch(webhookUrl, { method: 'GET', redirect: 'follow', signal: controller.signal });
+            clearTimeout(timer);
+            getStatus = probeRes.status;
+            getBody = (await probeRes.text()).slice(0, 300);
+          } catch (e) {
+            clearTimeout(timer);
+            getBody = e.message;
+          }
+        }
+        webhookProbe = {
+          configuredUrl: maskedUrl,
+          getHttpStatus: getStatus,
+          getResponseBodyPreview: getBody
+        };
+      } catch (probeErr) {
+        webhookProbe = { error: probeErr.message };
+      }
+    }
+
     const config = {
       gmailUser: process.env.GMAIL_USER || 'pratikfarate33@gmail.com',
       hasAppPassword: Boolean(process.env.GMAIL_APP_PASSWORD),
-      hasGmailWebhook: Boolean(process.env.GMAIL_WEBHOOK_URL),
-      webhookContainsPlaceholder: Boolean(process.env.GMAIL_WEBHOOK_URL && process.env.GMAIL_WEBHOOK_URL.includes('YOUR_DEPLOYMENT_ID')),
+      hasGmailWebhook: Boolean(webhookUrl),
+      webhookContainsPlaceholder: Boolean(webhookUrl && webhookUrl.includes('YOUR_DEPLOYMENT_ID')),
       hasResend: Boolean(process.env.RESEND_API_KEY),
-      hasBrevo: Boolean(process.env.BREVO_API_KEY)
+      hasBrevo: Boolean(process.env.BREVO_API_KEY),
+      webhookProbe
     };
 
     const result = await emailService.sendEmail(
