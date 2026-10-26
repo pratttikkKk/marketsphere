@@ -207,7 +207,23 @@ class ProductService {
         { sku: { $regex: keyword.trim(), $options: 'i' } }
       ];
     }
-    if (category) filter.category = category;
+    if (category) {
+      if (mongoose.Types.ObjectId.isValid(category)) {
+        filter.category = category;
+      } else {
+        const catDoc = await Category.findOne({
+          $or: [
+            { slug: category.toLowerCase().trim() },
+            { name: { $regex: new RegExp(`^${category.trim()}$`, 'i') } }
+          ]
+        });
+        if (catDoc) {
+          filter.category = catDoc._id;
+        } else {
+          filter.category = new mongoose.Types.ObjectId();
+        }
+      }
+    }
     if (sellerId) filter.sellerId = sellerId;
     if (minPrice || maxPrice) {
       filter.price = {};

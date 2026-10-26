@@ -3,7 +3,7 @@ import apiClient from '../../api/client';
 import SellerOnboarding from './SellerOnboarding';
 import { useNotification } from '../../context/NotificationContext';
 
-const formatCurrency = (value = 0) => `$${Number(value).toLocaleString()}`;
+const formatCurrency = (value = 0) => `₹${Number(value).toLocaleString()}`;
 
 const SellerDashboard = () => {
   const { toast, modal } = useNotification();

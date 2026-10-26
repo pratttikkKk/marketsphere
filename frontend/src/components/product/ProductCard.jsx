@@ -3,8 +3,16 @@ import { Link } from 'react-router-dom';
 const getImageUrl = (imagePath) => {
   if (!imagePath) return 'https://via.placeholder.com/300';
   if (imagePath.startsWith('http')) return imagePath;
-  const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api/v1', '') : 'http://localhost:5002';
-  return `${baseUrl}${imagePath}`;
+  let baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/v1\/?$/, '') : '';
+  if (!baseUrl && typeof window !== 'undefined') {
+    const { hostname } = window.location;
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      baseUrl = 'https://marketsphere-api.onrender.com';
+    } else {
+      baseUrl = 'http://localhost:5002';
+    }
+  }
+  return `${baseUrl || ''}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
 };
 
 export default function ProductCard({ product }) {

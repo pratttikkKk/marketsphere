@@ -113,11 +113,12 @@ if (fs.existsSync(frontendDist)) {
 }
 
 // Root & Health Probes (Supports Render/Railway health checks & browser verification)
-app.get(['/health', '/api/v1/health'], (req, res) => {
+app.get(['/', '/health', '/api/v1/health'], (req, res) => {
   res.status(200).json({ 
     status: 'UP', 
     service: 'MarketSphere Marketplace Backend API',
     database: mongoose.connection.readyState === 1 ? 'CONNECTED' : 'DISCONNECTED',
+    version: '1.0.0',
     timestamp: new Date() 
   });
 });
